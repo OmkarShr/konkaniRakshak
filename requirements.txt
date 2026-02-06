@@ -1,0 +1,28 @@
+# Core Framework
+pipecat-ai==0.0.49
+
+# Audio Processing
+pyaudio
+sounddevice
+numpy
+scipy
+resampy
+
+# LLM
+# google-generativeai  # Already installed
+
+# Logging & Utils
+loguru
+python-dotenv
+tqdm
+
+# ML Framework (installed separately via conda)
+# torch==2.1.0
+# torchvision==0.16.0
+# torchaudio==2.1.0
+
+# Future dependencies (Phases 2-4)
+# nemo_toolkit[asr]  # NeMo for IndicConformer
+# TTS  # Coqui XTTSv2
+# silero-vad  # Voice Activity Detection
+# onnxruntime-gpu  # For Silero VAD

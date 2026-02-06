@@ -1,0 +1,67 @@
+services:
+  # STT Service - NeMo with all its dependencies
+  stt-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.stt
+    image: konkani-stt-service:latest
+    container_name: konkani-stt-service
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - CUDA_VISIBLE_DEVICES=0
+      - STT_HOST=0.0.0.0
+      - STT_PORT=50051
+      - STT_DEVICE=cuda
+      - STT_LANGUAGE=kok
+      - STT_MODEL_PATH=/app/models/indicconformer_stt_kok_hybrid_rnnt_large.nemo
+    ports:
+      - "50051:50051"
+    volumes:
+      - ./models:/app/models:ro
+      - ./logs:/app/logs
+    networks:
+      - konkani-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:50051/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+
+  # Main Pipeline - Pipecat with clean dependencies
+  pipeline:
+    build:
+      context: .
+      dockerfile: Dockerfile.pipeline
+    image: konkani-pipeline:latest
+    container_name: konkani-pipeline
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - CUDA_VISIBLE_DEVICES=0
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - STT_SERVICE_URL=http://stt-service:50051
+      - DISPLAY=${DISPLAY}
+      - PULSE_SERVER=unix:/tmp/pulseaudio.socket
+      - PULSE_COOKIE=/tmp/pulseaudio.cookie
+    volumes:
+      - .:/app:ro
+      - ./logs:/app/logs
+      - /tmp/pulseaudio.socket:/tmp/pulseaudio.socket
+      - /tmp/pulseaudio.cookie:/tmp/pulseaudio.cookie
+    networks:
+      - konkani-network
+    depends_on:
+      stt-service:
+        condition: service_healthy
+    stdin_open: true
+    tty: true
+    privileged: true
+    devices:
+      - /dev/snd:/dev/snd
+
+networks:
+  konkani-network:
+    driver: bridge

@@ -1,0 +1,85 @@
+# Dockerfile for Pipecat Pipeline (Enhanced v2.0)
+# Clean environment with all optimizations
+
+FROM nvidia/cuda:12.1.0-runtime-ubuntu22.04
+
+# Prevent interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+
+# Install system dependencies including audio
+RUN apt-get update && apt-get install -y \
+    python3.10 \
+    python3-pip \
+    python3.10-dev \
+    portaudio19-dev \
+    libportaudio2 \
+    libportaudiocpp0 \
+    libasound2-dev \
+    libsndfile1 \
+    pulseaudio \
+    alsa-utils \
+    git \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Set Python 3.10 as default
+RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.10 1
+RUN update-alternatives --install /usr/bin/pip pip /usr/bin/pip3 1
+
+# Upgrade pip
+RUN pip install --upgrade pip setuptools wheel
+
+# Install PyTorch with CUDA 12.1
+RUN pip install torch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 \
+    --index-url https://download.pytorch.org/whl/cu121
+
+# Install Pipecat and dependencies
+RUN pip install pipecat-ai==0.0.49 \
+    pyaudio \
+    sounddevice \
+    numpy==1.26.4 \
+    scipy \
+    resampy \
+    loguru \
+    python-dotenv \
+    tqdm \
+    google-generativeai \
+    aiohttp \
+    silero-vad==5.1
+
+# Install TTS models (XTTSv2)
+RUN pip install TTS==0.22.0 \
+    transformers==4.40.0 \
+    huggingface-hub==0.23.5 \
+    soundfile \
+    sentencepiece \
+    aiohttp-cors \
+    psutil
+
+# Pre-download TTS models to avoid runtime delay
+RUN python -c "from TTS.api import TTS; import torch; print('Downloading XTTSv2 model...'); model = TTS('tts_models/multilingual/multi-dataset/xtts_v2'); print('XTTSv2 model ready');" 2>&1 || echo "Model will download at runtime"
+
+# Pre-download Silero VAD
+RUN python -c "import torch; print('Downloading Silero VAD...'); model, utils = torch.hub.load('snakers4/silero-vad', model='silero_vad'); print('Silero VAD ready');" 2>&1 || echo "VAD will download at runtime"
+
+# Create app directory
+WORKDIR /app
+
+# Copy source code
+COPY src/ /app/src/
+COPY config/ /app/config/
+COPY services/ /app/services/
+COPY run_production.py /app/
+COPY .env /app/.env
+
+# Set environment
+ENV PYTHONPATH=/app/src
+ENV PYTHONUNBUFFERED=1
+ENV ENABLE_DASHBOARD=true
+
+# Expose dashboard port
+EXPOSE 8080
+
+# Default command
+CMD ["python", "/app/run_production.py"]

@@ -1,0 +1,43 @@
+# Environment
+.env
+.venv/
+venv/
+tempvenv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+
+# Models (large files)
+models/*.nemo
+models/*.pt
+models/*.pth
+models/*.bin
+*.onnx
+
+# Logs
+logs/*.log
+logs/*.txt
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Planning docs
+.planning/
+
+# Test artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Docker
+.docker/

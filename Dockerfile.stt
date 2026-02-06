@@ -1,0 +1,39 @@
+# Dockerfile for NeMo STT Service
+# Uses AI4Bharat's NeMo fork for IndicConformer compatibility
+
+FROM nvcr.io/nvidia/nemo:24.01.speech
+
+# Prevent interactive prompts during build
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+
+# Install AI4Bharat NeMo fork (required for multilingual tokenizer support)
+RUN pip uninstall -y nemo-toolkit && \
+    pip install git+https://github.com/AI4Bharat/NeMo.git@nemo-v2#egg=nemo_toolkit[asr]
+
+# Install additional dependencies
+RUN pip install flask loguru aiohttp requests
+
+# Create app directory
+WORKDIR /app
+
+# Copy service code
+COPY services/stt_service.py /app/
+
+# Environment variables
+ENV STT_MODEL_PATH=/app/models/indicconformer_stt_kok_hybrid_rnnt_large.nemo
+ENV STT_HOST=0.0.0.0
+ENV STT_PORT=50051
+ENV STT_DEVICE=cuda
+ENV STT_LANGUAGE=kok
+ENV PYTHONPATH=/app
+
+# Expose port
+EXPOSE 50051
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=180s --retries=5 \
+    CMD curl -f http://localhost:50051/health || exit 1
+
+# Run the service
+CMD ["python", "/app/stt_service.py"]

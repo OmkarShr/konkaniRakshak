@@ -1,0 +1,111 @@
+version: '3.8'
+
+# Production deployment for 2x RTX Ada 4000 (20GB each)
+# Supports 2 concurrent sessions
+
+services:
+  # STT Service #1 - GPU 0
+  stt-service-1:
+    build:
+      context: .
+      dockerfile: Dockerfile.stt
+    container_name: konkani-stt-1
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=0
+      - CUDA_VISIBLE_DEVICES=0
+      - STT_HOST=0.0.0.0
+      - STT_PORT=50051
+      - STT_DEVICE=cuda
+      - STT_LANGUAGE=kok
+    ports:
+      - "50051:50051"
+    volumes:
+      - ./models:/app/models:ro
+      - ./logs/stt-1:/app/logs
+    networks:
+      - konkani-prod
+    restart: unless-stopped
+
+  # Pipeline #1 - GPU 0
+  pipeline-1:
+    build:
+      context: .
+      dockerfile: Dockerfile.pipeline
+    container_name: konkani-pipeline-1
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=0
+      - CUDA_VISIBLE_DEVICES=0
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - STT_SERVICE_URL=http://stt-service-1:50051
+      - TTS_VOICE=${TTS_VOICE:-female}
+      - DISPLAY=${DISPLAY}
+    volumes:
+      - .:/app:ro
+      - ./logs/pipeline-1:/app/logs
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    networks:
+      - konkani-prod
+    depends_on:
+      - stt-service-1
+    stdin_open: true
+    tty: true
+    privileged: true
+    devices:
+      - /dev/snd:/dev/snd
+
+  # STT Service #2 - GPU 1
+  stt-service-2:
+    build:
+      context: .
+      dockerfile: Dockerfile.stt
+    container_name: konkani-stt-2
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=1
+      - CUDA_VISIBLE_DEVICES=1
+      - STT_HOST=0.0.0.0
+      - STT_PORT=50051
+      - STT_DEVICE=cuda
+      - STT_LANGUAGE=kok
+    ports:
+      - "50052:50051"
+    volumes:
+      - ./models:/app/models:ro
+      - ./logs/stt-2:/app/logs
+    networks:
+      - konkani-prod
+    restart: unless-stopped
+
+  # Pipeline #2 - GPU 1
+  pipeline-2:
+    build:
+      context: .
+      dockerfile: Dockerfile.pipeline
+    container_name: konkani-pipeline-2
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=1
+      - CUDA_VISIBLE_DEVICES=1
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - STT_SERVICE_URL=http://stt-service-2:50051
+      - TTS_VOICE=${TTS_VOICE:-female}
+      - DISPLAY=${DISPLAY}
+    volumes:
+      - .:/app:ro
+      - ./logs/pipeline-2:/app/logs
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    networks:
+      - konkani-prod
+    depends_on:
+      - stt-service-2
+    stdin_open: true
+    tty: true
+    privileged: true
+    devices:
+      - /dev/snd:/dev/snd
+
+networks:
+  konkani-prod:
+    driver: bridge

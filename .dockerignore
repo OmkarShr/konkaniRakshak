@@ -1,0 +1,44 @@
+.git
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info
+dist
+build
+# .env - needed for build, mounted at runtime
+.venv
+venv/
+ENV/
+env/
+.conda/
+*.log
+logs/*.log
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Docker files (don't include in build context unnecessarily)
+Dockerfile*
+docker-compose.yml
+docker-*.sh
+.dockerignore
+
+# Documentation (not needed in containers)
+*.md
+.planning/
+PHASE1_REPORT.md
+STATUS.md
+
+# Models are mounted as volumes, not copied
+# models/
+
+# Test outputs
+tests/__pycache__/
+.pytest_cache/
