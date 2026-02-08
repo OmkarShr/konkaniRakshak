@@ -1,0 +1,21 @@
+# Dockerfile for Voxtral STT (vLLM-based)
+# Serves mistralai/Voxtral-Mini-4B-Realtime-2602 for English + Hindi STT
+# Runs on GPU 1
+
+FROM vllm/vllm-openai:nightly
+
+# Install audio processing libs required by Voxtral
+RUN pip install soxr librosa soundfile
+
+# Expose vLLM's default API port
+EXPOSE 8000
+
+# Serve Voxtral with eager mode (required for novel architecture)
+# Temperature 0 recommended by Voxtral docs
+CMD ["--model", "mistralai/Voxtral-Mini-4B-Realtime-2602", \
+     "--enforce-eager", \
+     "--dtype", "bfloat16", \
+     "--max-model-len", "16384", \
+     "--gpu-memory-utilization", "0.85", \
+     "--host", "0.0.0.0", \
+     "--port", "8000"]

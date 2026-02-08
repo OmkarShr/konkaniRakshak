@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Konkani Voice Agent - Real-time</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    min-height: 100vh; display:flex; justify-content:center; align-items:center;
+    padding: 20px; color: #e0e0e0;
+  }
+  .container {
+    background: rgba(255,255,255,0.06);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 24px; padding: 40px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    max-width: 640px; width: 100%;
+  }
+  h1 { text-align:center; color:#fff; margin-bottom:6px; font-size:26px; }
+  .subtitle { text-align:center; color:#8899aa; margin-bottom:24px; font-size:13px; }
+
+  /* Status bar */
+  .status-bar {
+    display:flex; align-items:center; justify-content:center; gap:10px;
+    padding: 12px 16px; border-radius: 12px; margin-bottom: 20px;
+    font-size: 14px; font-weight: 500; transition: all 0.3s;
+  }
+  .status-bar .dot {
+    width:10px; height:10px; border-radius:50%;
+    display:inline-block; flex-shrink:0;
+  }
+  .status-bar.disconnected { background:rgba(220,53,69,0.15); color:#ff6b6b; }
+  .status-bar.disconnected .dot { background:#ff6b6b; }
+  .status-bar.connected { background:rgba(40,167,69,0.15); color:#51cf66; }
+  .status-bar.connected .dot { background:#51cf66; }
+  .status-bar.listening { background:rgba(40,167,69,0.15); color:#51cf66; }
+  .status-bar.listening .dot { background:#51cf66; animation: blink 2s infinite; }
+  .status-bar.recording { background:rgba(255,193,7,0.15); color:#ffd43b; }
+  .status-bar.recording .dot { background:#ffd43b; animation: pulse-dot 0.8s infinite; }
+  .status-bar.processing { background:rgba(0,123,255,0.15); color:#74c0fc; }
+  .status-bar.processing .dot { background:#74c0fc; animation: blink 0.5s infinite; }
+  .status-bar.speaking { background:rgba(155,89,182,0.15); color:#b197fc; }
+  .status-bar.speaking .dot { background:#b197fc; animation: pulse-dot 0.6s infinite; }
+
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0.3} }
+  @keyframes pulse-dot { 0%,100%{transform:scale(1)} 50%{transform:scale(1.4)} }
+
+  /* Mic button */
+  .mic-area { text-align:center; margin: 24px 0; }
+  .mic-btn {
+    width:100px; height:100px; border-radius:50%; border:3px solid rgba(255,255,255,0.2);
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color:#fff; font-size:42px; cursor:pointer;
+    display:inline-flex; align-items:center; justify-content:center;
+    box-shadow: 0 4px 20px rgba(102,126,234,0.3);
+    transition: all 0.3s; position:relative;
+  }
+  .mic-btn:hover { transform:scale(1.05); box-shadow: 0 6px 30px rgba(102,126,234,0.5); }
+  .mic-btn.active {
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    border-color: rgba(245,87,108,0.5);
+    animation: pulse-ring 1.5s infinite;
+  }
+  .mic-btn:disabled { opacity:0.4; cursor:not-allowed; transform:none; }
+  @keyframes pulse-ring {
+    0%   { box-shadow: 0 0 0 0 rgba(245,87,108,0.5); }
+    70%  { box-shadow: 0 0 0 20px rgba(245,87,108,0); }
+    100% { box-shadow: 0 0 0 0 rgba(245,87,108,0); }
+  }
+
+  .mic-label { font-size:12px; color:#8899aa; margin-top:8px; }
+
+  /* Conversation */
+  .convo {
+    margin-top: 20px; max-height: 340px; overflow-y: auto;
+    scroll-behavior: smooth; padding-right: 4px;
+  }
+  .convo::-webkit-scrollbar { width:6px; }
+  .convo::-webkit-scrollbar-thumb { background:rgba(255,255,255,0.15); border-radius:3px; }
+
+  .msg {
+    margin-bottom: 12px; padding: 10px 14px;
+    border-radius: 16px; max-width: 85%; word-wrap:break-word;
+    font-size: 14px; line-height: 1.5;
+  }
+  .msg.user {
+    background: rgba(102,126,234,0.25); color: #c5cff5;
+    margin-left: auto; border-bottom-right-radius: 4px;
+  }
+  .msg.agent {
+    background: rgba(255,255,255,0.08); color: #e0e0e0;
+    border-bottom-left-radius: 4px;
+  }
+  .msg-label { font-size: 10px; opacity: 0.5; margin-bottom: 3px; text-transform:uppercase; letter-spacing:0.5px; }
+
+  /* Latency */
+  .latency {
+    text-align:center; font-size:11px; color:#556; margin-top:12px;
+  }
+
+  /* Footer */
+  .footer {
+    text-align:center; margin-top:20px; font-size:12px; color:#556;
+  }
+  .footer button {
+    background:none; border:1px solid rgba(255,255,255,0.15); color:#889;
+    padding:6px 16px; border-radius:8px; cursor:pointer; font-size:12px;
+  }
+  .footer button:hover { background:rgba(255,255,255,0.05); color:#aab; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Nagar Rakshak</h1>
+  <p class="subtitle">Konkani Voice Agent -- Real-time Conversational AI</p>
+
+  <div id="status" class="status-bar disconnected">
+    <span class="dot"></span>
+    <span id="statusText">Connecting...</span>
+  </div>
+
+  <div class="mic-area">
+    <button id="micBtn" class="mic-btn" disabled>&#x1F3A4;</button>
+    <div class="mic-label" id="micLabel">Connect first</div>
+  </div>
+
+  <div id="convo" class="convo"></div>
+  <div id="latency" class="latency"></div>
+
+  <div class="footer">
+    <button onclick="resetConvo()">Clear conversation</button>
+  </div>
+</div>
+
+<script>
+// ── Config ──
+const WS_URL = `ws://${location.hostname}:8765`;
+const SAMPLE_RATE_IN  = 16000;
+const SAMPLE_RATE_OUT = 44100;
+const CHUNK_MS = 20;            // send 20ms audio chunks
+const CHUNK_SAMPLES = SAMPLE_RATE_IN * CHUNK_MS / 1000;  // 320
+
+// ── State ──
+let ws = null;
+let audioCtx = null;
+let micStream = null;
+let scriptNode = null;
+let isActive = false;            // mic active (streaming to server)
+let playQueue = [];              // queued PCM chunks for playback
+let isPlaying = false;
+let nextPlayTime = 0;
+
+const statusEl   = document.getElementById('status');
+const statusText = document.getElementById('statusText');
+const micBtn     = document.getElementById('micBtn');
+const micLabel   = document.getElementById('micLabel');
+const convoEl    = document.getElementById('convo');
+const latencyEl  = document.getElementById('latency');
+
+// ── WebSocket ──
+function connect() {
+  setStatus('disconnected', 'Connecting...');
+  ws = new WebSocket(WS_URL);
+  ws.binaryType = 'arraybuffer';
+
+  ws.onopen = () => {
+    setStatus('connected', 'Connected -- click mic to start');
+    micBtn.disabled = false;
+    micLabel.textContent = 'Click to start';
+  };
+
+  ws.onmessage = (evt) => {
+    if (evt.data instanceof ArrayBuffer) {
+      // Binary = TTS audio (s16le PCM at 44.1kHz)
+      enqueueTTSAudio(evt.data);
+    } else {
+      const msg = JSON.parse(evt.data);
+      handleServerMsg(msg);
+    }
+  };
+
+  ws.onclose = () => {
+    setStatus('disconnected', 'Disconnected -- reconnecting...');
+    micBtn.disabled = true;
+    stopMic();
+    setTimeout(connect, 3000);
+  };
+
+  ws.onerror = () => {};
+}
+
+function handleServerMsg(msg) {
+  switch (msg.type) {
+    case 'ready':
+      setStatus('connected', 'Ready -- click mic to start');
+      break;
+    case 'speech_start':
+      setStatus('recording', 'Listening to you...');
+      break;
+    case 'processing':
+      setStatus('processing', 'Processing...');
+      break;
+    case 'transcription':
+      addMessage(msg.text, 'user');
+      break;
+    case 'response_text':
+      addMessage(msg.text, 'agent');
+      break;
+    case 'tts_start':
+      setStatus('speaking', 'Agent speaking...');
+      break;
+    case 'tts_done':
+      // Wait for playback to finish before going back to listening
+      waitForPlaybackDone().then(() => {
+        if (isActive) setStatus('listening', 'Listening...');
+      });
+      break;
+    case 'interrupted':
+      // Stop playback immediately
+      playQueue = [];
+      setStatus('recording', 'Listening to you...');
+      break;
+    case 'turn_done':
+      break;
+    case 'speech_too_short':
+      if (isActive) setStatus('listening', 'Listening...');
+      break;
+    case 'stt_empty':
+      if (isActive) setStatus('listening', 'Could not hear -- try again');
+      break;
+    case 'error':
+      setStatus('connected', `Error: ${msg.message}`);
+      break;
+    case 'reset_ok':
+      convoEl.innerHTML = '';
+      break;
+  }
+}
+
+// ── Mic capture ──
+micBtn.addEventListener('click', () => {
+  if (!isActive) startMic();
+  else stopMic();
+});
+
+async function startMic() {
+  try {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: SAMPLE_RATE_IN });
+    micStream = await navigator.mediaDevices.getUserMedia({
+      audio: { sampleRate: SAMPLE_RATE_IN, channelCount: 1, echoCancellation: true, noiseSuppression: true }
+    });
+
+    const source = audioCtx.createMediaStreamSource(micStream);
+    // ScriptProcessorNode for raw PCM access (deprecated but universal)
+    scriptNode = audioCtx.createScriptProcessor(512, 1, 1);
+
+    let pcmBuffer = new Float32Array(0);
+
+    scriptNode.onaudioprocess = (e) => {
+      if (!isActive || !ws || ws.readyState !== 1) return;
+      const input = e.inputBuffer.getChannelData(0);
+
+      // Accumulate
+      const newBuf = new Float32Array(pcmBuffer.length + input.length);
+      newBuf.set(pcmBuffer);
+      newBuf.set(input, pcmBuffer.length);
+      pcmBuffer = newBuf;
+
+      // Send in chunks of CHUNK_SAMPLES
+      while (pcmBuffer.length >= CHUNK_SAMPLES) {
+        const chunk = pcmBuffer.slice(0, CHUNK_SAMPLES);
+        pcmBuffer = pcmBuffer.slice(CHUNK_SAMPLES);
+
+        // Convert float32 to int16
+        const s16 = new Int16Array(chunk.length);
+        for (let i = 0; i < chunk.length; i++) {
+          s16[i] = Math.max(-32768, Math.min(32767, Math.round(chunk[i] * 32767)));
+        }
+        ws.send(s16.buffer);
+      }
+    };
+
+    source.connect(scriptNode);
+    scriptNode.connect(audioCtx.destination);
+
+    isActive = true;
+    micBtn.classList.add('active');
+    micLabel.textContent = 'Click to stop';
+    setStatus('listening', 'Listening...');
+
+  } catch (err) {
+    console.error('Mic error:', err);
+    setStatus('disconnected', 'Mic permission denied');
+  }
+}
+
+function stopMic() {
+  isActive = false;
+  micBtn.classList.remove('active');
+  micLabel.textContent = 'Click to start';
+
+  if (scriptNode) { scriptNode.disconnect(); scriptNode = null; }
+  if (micStream) { micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+  if (audioCtx) { audioCtx.close().catch(()=>{}); audioCtx = null; }
+
+  setStatus('connected', 'Mic off -- click to start');
+}
+
+// ── TTS Playback ──
+function enqueueTTSAudio(arrayBuffer) {
+  // arrayBuffer is s16le PCM at 24kHz
+  playQueue.push(arrayBuffer);
+  if (!isPlaying) startPlayback();
+}
+
+function startPlayback() {
+  if (playQueue.length === 0) { isPlaying = false; return; }
+  isPlaying = true;
+
+  // Create a playback AudioContext at 24kHz
+  const playCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: SAMPLE_RATE_OUT });
+  nextPlayTime = playCtx.currentTime + 0.05;  // small initial buffer
+
+  function scheduleNext() {
+    while (playQueue.length > 0) {
+      const buf = playQueue.shift();
+      const s16 = new Int16Array(buf);
+      const float32 = new Float32Array(s16.length);
+      for (let i = 0; i < s16.length; i++) float32[i] = s16[i] / 32768.0;
+
+      const audioBuffer = playCtx.createBuffer(1, float32.length, SAMPLE_RATE_OUT);
+      audioBuffer.getChannelData(0).set(float32);
+
+      const src = playCtx.createBufferSource();
+      src.buffer = audioBuffer;
+      src.connect(playCtx.destination);
+
+      if (nextPlayTime < playCtx.currentTime) nextPlayTime = playCtx.currentTime;
+      src.start(nextPlayTime);
+      nextPlayTime += audioBuffer.duration;
+    }
+
+    // Check for more data later
+    setTimeout(() => {
+      if (playQueue.length > 0) {
+        scheduleNext();
+      } else {
+        // Wait a bit more in case more chunks arrive
+        setTimeout(() => {
+          if (playQueue.length > 0) {
+            scheduleNext();
+          } else {
+            isPlaying = false;
+            playCtx.close().catch(()=>{});
+          }
+        }, 500);
+      }
+    }, 50);
+  }
+
+  scheduleNext();
+}
+
+function waitForPlaybackDone() {
+  return new Promise(resolve => {
+    const check = () => {
+      if (!isPlaying && playQueue.length === 0) resolve();
+      else setTimeout(check, 200);
+    };
+    check();
+  });
+}
+
+// ── UI helpers ──
+function setStatus(cls, text) {
+  statusEl.className = 'status-bar ' + cls;
+  statusText.textContent = text;
+}
+
+function addMessage(text, sender) {
+  if (!text) return;
+  const wrap = document.createElement('div');
+  wrap.className = 'msg ' + sender;
+
+  const label = document.createElement('div');
+  label.className = 'msg-label';
+  label.textContent = sender === 'user' ? 'You' : 'Agent';
+
+  const body = document.createElement('div');
+  body.textContent = text;
+
+  wrap.appendChild(label);
+  wrap.appendChild(body);
+  convoEl.appendChild(wrap);
+  convoEl.scrollTop = convoEl.scrollHeight;
+}
+
+function resetConvo() {
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify({type:'reset'}));
+  convoEl.innerHTML = '';
+}
+
+// ── Start ──
+connect();
+</script>
+</body>
+</html>

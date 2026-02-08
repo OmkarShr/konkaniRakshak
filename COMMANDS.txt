@@ -1,0 +1,21 @@
+#!/bin/bash
+# Quick commands for Konkani Voice Agent
+
+echo "🎤 Konkani Voice Agent - Quick Commands"
+echo "=========================================="
+echo ""
+echo "TESTING:"
+echo "  ./test.sh full       - Run complete pipeline test"
+echo "  ./test.sh voice      - Test with your voice only"
+echo "  ./test.sh file       - Test with testKonkani.mp3"
+echo ""
+echo "DOCKER:"
+echo "  ./test.sh start      - Start all services"
+echo "  ./test.sh stop       - Stop all services"
+echo "  ./test.sh status     - Check container status"
+echo "  ./test.sh logs       - View pipeline logs"
+echo ""
+echo "HEALTH:"
+echo "  ./test.sh health     - Check STT services"
+echo "  ./test.sh gpu        - Check GPU usage"
+echo ""

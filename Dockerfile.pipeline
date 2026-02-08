@@ -34,8 +34,8 @@ RUN pip install --upgrade pip setuptools wheel
 RUN pip install torch==2.1.0 torchvision==0.16.0 torchaudio==2.1.0 \
     --index-url https://download.pytorch.org/whl/cu121
 
-# Install Pipecat and dependencies
-RUN pip install pipecat-ai==0.0.49 \
+# Install core dependencies
+RUN pip install \
     pyaudio \
     sounddevice \
     numpy==1.26.4 \
@@ -44,21 +44,23 @@ RUN pip install pipecat-ai==0.0.49 \
     loguru \
     python-dotenv \
     tqdm \
-    google-generativeai \
     aiohttp \
     silero-vad==5.1
 
-# Install TTS models (XTTSv2)
-RUN pip install TTS==0.22.0 \
-    transformers==4.40.0 \
-    huggingface-hub==0.23.5 \
+# Install TTS models (Indic Parler-TTS) and dependencies
+RUN pip install \
+    transformers==4.46.1 \
+    huggingface-hub \
     soundfile \
     sentencepiece \
     aiohttp-cors \
-    psutil
+    psutil \
+    websockets \
+    google-generativeai \
+    pipecat-ai==0.0.49
 
-# Pre-download TTS models to avoid runtime delay
-RUN python -c "from TTS.api import TTS; import torch; print('Downloading XTTSv2 model...'); model = TTS('tts_models/multilingual/multi-dataset/xtts_v2'); print('XTTSv2 model ready');" 2>&1 || echo "Model will download at runtime"
+# Install Parler-TTS from source
+RUN pip install git+https://github.com/huggingface/parler-tts.git
 
 # Pre-download Silero VAD
 RUN python -c "import torch; print('Downloading Silero VAD...'); model, utils = torch.hub.load('snakers4/silero-vad', model='silero_vad'); print('Silero VAD ready');" 2>&1 || echo "VAD will download at runtime"
@@ -70,16 +72,15 @@ WORKDIR /app
 COPY src/ /app/src/
 COPY config/ /app/config/
 COPY services/ /app/services/
-COPY run_production.py /app/
-COPY .env /app/.env
+COPY ws_pipeline.py /app/
+COPY start_pipeline.sh /app/
 
 # Set environment
 ENV PYTHONPATH=/app/src
 ENV PYTHONUNBUFFERED=1
-ENV ENABLE_DASHBOARD=true
 
-# Expose dashboard port
-EXPOSE 8080
+# Expose WebSocket port
+EXPOSE 8765
 
-# Default command
-CMD ["python", "/app/run_production.py"]
+# Default command: run the real-time WebSocket pipeline
+CMD ["bash", "/app/start_pipeline.sh"]

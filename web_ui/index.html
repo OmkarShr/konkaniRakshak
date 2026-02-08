@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Konkani Voice Agent</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 600px;
+            width: 100%;
+        }
+
+        h1 { text-align: center; color: #333; margin-bottom: 10px; font-size: 28px; }
+
+        .subtitle {
+            text-align: center; color: #666;
+            margin-bottom: 30px; font-size: 14px;
+        }
+
+        .status {
+            background: #f0f0f0; border-radius: 10px;
+            padding: 15px; margin-bottom: 20px;
+            text-align: center; font-weight: 500;
+        }
+        .status.connected  { background: #d4edda; color: #155724; }
+        .status.recording  { background: #fff3cd; color: #856404; }
+        .status.processing { background: #d1ecf1; color: #0c5460; }
+        .status.error      { background: #f8d7da; color: #721c24; }
+
+        .mic-button {
+            width: 120px; height: 120px; border-radius: 50%; border: none;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white; font-size: 48px; cursor: pointer;
+            margin: 20px auto; display: block;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+            transition: all 0.3s ease;
+        }
+        .mic-button:hover { transform: scale(1.05); box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6); }
+        .mic-button:active { transform: scale(0.95); }
+        .mic-button.recording {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            animation: pulse 1.5s infinite;
+        }
+        .mic-button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+
+        @keyframes pulse {
+            0%   { box-shadow: 0 0 0 0 rgba(245, 87, 108, 0.7); }
+            70%  { box-shadow: 0 0 0 20px rgba(245, 87, 108, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(245, 87, 108, 0); }
+        }
+
+        .timer {
+            text-align: center; font-size: 13px; color: #999;
+            margin-top: -10px; margin-bottom: 10px; min-height: 18px;
+        }
+
+        .conversation {
+            margin-top: 20px; max-height: 350px;
+            overflow-y: auto; scroll-behavior: smooth;
+        }
+
+        .message {
+            margin-bottom: 15px; padding: 12px 16px;
+            border-radius: 18px; max-width: 85%; word-wrap: break-word;
+        }
+        .message.user {
+            background: #667eea; color: white;
+            margin-left: auto; border-bottom-right-radius: 4px;
+        }
+        .message.agent {
+            background: #f0f0f0; color: #333;
+            border-bottom-left-radius: 4px;
+        }
+        .message-label { font-size: 11px; opacity: 0.7; margin-bottom: 4px; }
+
+        .instructions {
+            text-align: center; color: #666; font-size: 13px;
+            margin-top: 20px; padding: 15px; background: #f9f9f9;
+            border-radius: 10px;
+        }
+
+        .reset-btn {
+            display: block; margin: 15px auto 0; padding: 8px 20px;
+            border: 1px solid #ccc; border-radius: 8px; background: #fff;
+            color: #666; cursor: pointer; font-size: 13px;
+        }
+        .reset-btn:hover { background: #f0f0f0; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Konkani Voice Agent</h1>
+        <p class="subtitle">Nagar Rakshak -- FIR Filing Assistant (Konkani)</p>
+
+        <div id="status" class="status">Checking connection...</div>
+
+        <button id="micButton" class="mic-button" disabled>&#x1F3A4;</button>
+        <div id="timer" class="timer"></div>
+
+        <div id="conversation" class="conversation"></div>
+
+        <button class="reset-btn" onclick="resetConversation()">Clear conversation</button>
+
+        <div class="instructions">
+            <strong>How to use:</strong><br>
+            1. Click the microphone button<br>
+            2. Speak in Konkani<br>
+            3. Click again to stop (or wait 15 s)<br>
+            4. The agent will respond in Konkani
+        </div>
+    </div>
+
+<script>
+    // ── State ──
+    let mediaRecorder = null;
+    let audioChunks  = [];
+    let isRecording  = false;
+    let timerInterval = null;
+    let recordStart   = 0;
+
+    const MAX_RECORD_SEC = 15;
+
+    // Use relative URLs so it works from any host/IP
+    const API_URL = '';
+
+    const micBtn   = document.getElementById('micButton');
+    const statusEl = document.getElementById('status');
+    const convoEl  = document.getElementById('conversation');
+    const timerEl  = document.getElementById('timer');
+
+    // ── Health check ──
+    async function checkHealth() {
+        try {
+            const r = await fetch(`${API_URL}/health`);
+            if (r.ok) {
+                statusEl.textContent = 'Connected to voice agent';
+                statusEl.className  = 'status connected';
+                micBtn.disabled = false;
+                return;
+            }
+        } catch (e) { /* fall through */ }
+        statusEl.textContent = 'Backend not connected -- is the server running?';
+        statusEl.className   = 'status error';
+        micBtn.disabled = true;
+    }
+    checkHealth();
+    setInterval(checkHealth, 30000);  // re-check every 30 s
+
+    // ── Mic button ──
+    micBtn.addEventListener('click', async () => {
+        if (!isRecording) await startRecording();
+        else stopRecording();
+    });
+
+    async function startRecording() {
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+                audio: { channelCount: 1, sampleRate: 16000 }
+            });
+
+            // Pick a supported mime type
+            const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+                ? 'audio/webm;codecs=opus'
+                : MediaRecorder.isTypeSupported('audio/webm')
+                    ? 'audio/webm'
+                    : '';  // browser default
+
+            const options = mimeType ? { mimeType } : {};
+            mediaRecorder = new MediaRecorder(stream, options);
+            audioChunks = [];
+
+            mediaRecorder.ondataavailable = e => { if (e.data.size > 0) audioChunks.push(e.data); };
+            mediaRecorder.onstop = () => processAudio();
+
+            mediaRecorder.start(250);   // collect chunks every 250 ms
+            isRecording = true;
+            recordStart = Date.now();
+
+            micBtn.classList.add('recording');
+            micBtn.innerHTML = '&#x23F9;';
+            statusEl.textContent = 'Recording... speak now!';
+            statusEl.className  = 'status recording';
+
+            // Timer display
+            timerEl.textContent = '0 s';
+            timerInterval = setInterval(() => {
+                const elapsed = Math.round((Date.now() - recordStart) / 1000);
+                timerEl.textContent = `${elapsed} s`;
+                if (elapsed >= MAX_RECORD_SEC) stopRecording();
+            }, 500);
+
+        } catch (err) {
+            console.error('Mic error:', err);
+            statusEl.textContent = 'Could not access microphone -- please allow permission';
+            statusEl.className  = 'status error';
+        }
+    }
+
+    function stopRecording() {
+        if (!mediaRecorder || !isRecording) return;
+        clearInterval(timerInterval);
+        timerEl.textContent = '';
+        mediaRecorder.stop();
+        mediaRecorder.stream.getTracks().forEach(t => t.stop());
+        isRecording = false;
+        micBtn.classList.remove('recording');
+        micBtn.innerHTML = '&#x1F3A4;';
+        micBtn.disabled = true;
+        statusEl.textContent = 'Processing...';
+        statusEl.className  = 'status processing';
+    }
+
+    async function processAudio() {
+        try {
+            const blob = new Blob(audioChunks, { type: mediaRecorder.mimeType || 'audio/webm' });
+            if (blob.size < 1000) {
+                statusEl.textContent = 'Recording too short -- try again';
+                statusEl.className  = 'status error';
+                micBtn.disabled = false;
+                return;
+            }
+
+            // Convert blob to base64
+            const b64 = await blobToBase64(blob);
+
+            const resp = await fetch(`${API_URL}/process`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ audio: b64 })
+            });
+
+            if (!resp.ok) {
+                const err = await resp.json().catch(() => ({}));
+                throw new Error(err.error || `Server error ${resp.status}`);
+            }
+
+            const result = await resp.json();
+
+            if (result.transcription) addMessage(result.transcription, 'user');
+            if (result.response_text) addMessage(result.response_text, 'agent');
+
+            if (result.response_audio) {
+                await playAudio(result.response_audio);
+            }
+
+            statusEl.textContent = 'Connected to voice agent';
+            statusEl.className  = 'status connected';
+
+        } catch (err) {
+            console.error('Process error:', err);
+            statusEl.textContent = `Error: ${err.message}`;
+            statusEl.className  = 'status error';
+        } finally {
+            micBtn.disabled = false;
+        }
+    }
+
+    // ── Helpers ──
+    function blobToBase64(blob) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => resolve(reader.result.split(',')[1]);
+            reader.onerror   = reject;
+            reader.readAsDataURL(blob);
+        });
+    }
+
+    function addMessage(text, sender) {
+        if (!text) return;
+        const wrap = document.createElement('div');
+        wrap.className = `message ${sender}`;
+
+        const label = document.createElement('div');
+        label.className = 'message-label';
+        label.textContent = sender === 'user' ? 'You (transcription)' : 'Agent';
+
+        const body = document.createElement('div');
+        body.textContent = text;
+
+        wrap.appendChild(label);
+        wrap.appendChild(body);
+        convoEl.appendChild(wrap);
+        convoEl.scrollTop = convoEl.scrollHeight;
+    }
+
+    async function playAudio(base64Audio) {
+        statusEl.textContent = 'Playing response...';
+        statusEl.className   = 'status processing';
+        const audio = new Audio(`data:audio/wav;base64,${base64Audio}`);
+        return new Promise(resolve => {
+            audio.onended = () => {
+                statusEl.textContent = 'Connected to voice agent';
+                statusEl.className  = 'status connected';
+                resolve();
+            };
+            audio.onerror = () => { resolve(); };
+            audio.play().catch(() => resolve());
+        });
+    }
+
+    async function resetConversation() {
+        convoEl.innerHTML = '';
+        try { await fetch(`${API_URL}/reset`, { method: 'POST' }); } catch(e) {}
+    }
+</script>
+</body>
+</html>

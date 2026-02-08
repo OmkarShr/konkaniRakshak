@@ -20,21 +20,16 @@ if [ ! -f "models/indicconformer_stt_kok_hybrid_rnnt_large.nemo" ]; then
 fi
 
 # Activate environment with NeMo
-source $(conda info --base)/etc/profile.d/conda.sh
-
-# Use a separate environment for STT service (NeMo with protobuf 5.x)
-if conda env list | grep -q "konkani-stt"; then
-    echo "Activating konkani-stt environment..."
-    conda activate konkani-stt
+if [ -d "venv-stt" ]; then
+    echo "Activating venv-stt environment..."
+    source venv-stt/bin/activate
+elif [ -d "venv" ]; then
+    echo "Activating venv environment..."
+    source venv/bin/activate
 else
-    echo "Creating konkani-stt environment for STT service..."
-    conda create -n konkani-stt python=3.10 -y
-    conda activate konkani-stt
-    
-    echo "Installing dependencies..."
-    pip install torch==2.1.0 --index-url https://download.pytorch.org/whl/cu121
-    pip install nemo-toolkit[asr]==2.6.1
-    pip install flask loguru numpy
+    echo "Error: No virtual environment found (venv-stt or venv)."
+    echo "Please run: ./setup_stt_env_venv.sh"
+    exit 1
 fi
 
 # Set environment variables
