@@ -42,7 +42,7 @@ logger.add(
 # -- Configuration --
 WS_HOST = "0.0.0.0"
 WS_PORT = int(os.getenv("WS_PORT", "8766"))
-VOXTRAL_URL = os.getenv("VOXTRAL_URL", "ws://voxtral-stt:8000")
+STT_URL = os.getenv("MULTILINGUAL_STT_URL", "http://multilingual-stt:50052")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 
@@ -53,7 +53,7 @@ IN_CHUNK = AUDIO_IN_RATE * CHUNK_MS // 1000   # 320 samples
 OUT_CHUNK = AUDIO_OUT_RATE * CHUNK_MS // 1000  # 882 samples
 VAD_CHUNK = 512             # Silero VAD minimum: 512 samples at 16kHz
 
-VAD_THRESHOLD = 0.30
+VAD_THRESHOLD = 0.50
 MIN_SPEECH_MS = 200
 MIN_SILENCE_MS = 600
 MAX_RECORD_S = 20
@@ -341,33 +341,16 @@ class PipelineSession:
             self.agent_speaking = False
             await self.send_json({"type": "turn_done"})
 
-    # -- STT via Voxtral (vLLM /v1/audio/transcriptions HTTP API) --
+    # -- STT via IndicConformer Multilingual (HTTP API) --
     async def _run_stt_voxtral(self, pcm_bytes: bytes) -> str:
-        """Send audio to Voxtral via vLLM's OpenAI-compatible transcription API."""
-        # Convert raw PCM to WAV in memory (vLLM expects a file upload)
-        wav_buffer = io.BytesIO()
-        with wave.open(wav_buffer, 'wb') as wf:
-            wf.setnchannels(1)
-            wf.setsampwidth(2)
-            wf.setframerate(AUDIO_IN_RATE)
-            wf.writeframes(pcm_bytes)
-        wav_bytes = wav_buffer.getvalue()
-
-        # Use the HTTP base URL (convert ws:// to http://)
-        http_url = VOXTRAL_URL.replace("ws://", "http://").replace("wss://", "https://")
-        url = f"{http_url}/v1/audio/transcriptions"
-
+        """Send audio to IndicConformer multilingual STT service."""
+        audio_b64 = base64.b64encode(pcm_bytes).decode()
+        
         try:
-            form = aiohttp.FormData()
-            form.add_field('file', wav_bytes, filename='audio.wav', content_type='audio/wav')
-            form.add_field('model', 'mistralai/Voxtral-Mini-4B-Realtime-2602')
-            form.add_field('language', self.language)
-            form.add_field('temperature', '0.0')
-
             async with aiohttp.ClientSession() as session:
                 async with session.post(
-                    url,
-                    data=form,
+                    f"{STT_URL}/transcribe",
+                    json={"audio": audio_b64, "sample_rate": AUDIO_IN_RATE},
                     timeout=aiohttp.ClientTimeout(total=30),
                 ) as resp:
                     if resp.status == 200:
@@ -375,10 +358,10 @@ class PipelineSession:
                         return (data.get("text") or "").strip()
                     else:
                         body = await resp.text()
-                        logger.error(f"[Multi] Voxtral STT error {resp.status}: {body[:200]}")
+                        logger.error(f"[Multi] STT error {resp.status}: {body[:200]}")
                         return ""
         except Exception as e:
-            logger.error(f"[Multi] Voxtral STT exception: {e}")
+            logger.error(f"[Multi] STT exception: {e}")
             return ""
 
     # -- LLM via Gemini --
@@ -515,7 +498,7 @@ async def main():
 
     logger.info("")
     logger.info(f"  WebSocket server: ws://{WS_HOST}:{WS_PORT}")
-    logger.info(f"  Voxtral STT:      {VOXTRAL_URL}")
+    logger.info(f"  STT service:      {STT_URL}")
     logger.info(f"  Gemini model:     {GEMINI_MODEL}")
     logger.info(f"  TTS voice:        Indic Parler-TTS")
     logger.info(f"  Languages:        English, Hindi")

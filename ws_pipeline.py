@@ -41,6 +41,7 @@ logger.add(
 WS_HOST = "0.0.0.0"
 WS_PORT = int(os.getenv("WS_PORT", "8765"))
 STT_URL = os.getenv("STT_SERVICE_URL", "http://konkani-stt-1:50051")
+MULTILINGUAL_STT_URL = os.getenv("MULTILINGUAL_STT_URL", "http://language-router:50052")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 
@@ -51,7 +52,7 @@ IN_CHUNK = AUDIO_IN_RATE * CHUNK_MS // 1000   # 320 samples
 OUT_CHUNK = AUDIO_OUT_RATE * CHUNK_MS // 1000  # 882 samples
 VAD_CHUNK = 512             # Silero VAD minimum: 512 samples at 16kHz (32ms)
 
-VAD_THRESHOLD = 0.30
+VAD_THRESHOLD = 0.50
 MIN_SPEECH_MS = 200         # reduced from 300 to avoid missing initial words
 MIN_SILENCE_MS = 600
 MAX_RECORD_S = 20
@@ -143,6 +144,7 @@ class PipelineSession:
         self.agent_speaking = False             # True while TTS audio is being sent
         self._cancel_tts = False
         self._tts_task: Optional[asyncio.Task] = None
+        self.language_mode = "konkani"          # default: konkani or multilingual
 
     # ── Send helpers ───────────────────────────────────────────────
     async def send_json(self, msg: dict):
@@ -194,6 +196,12 @@ class PipelineSession:
             await self.send_json({"type": "reset_ok"})
         elif cmd == "ping":
             await self.send_json({"type": "pong"})
+        elif cmd == "set_language":
+            mode = data.get("mode", "konkani")
+            if mode in ("konkani", "multilingual"):
+                self.language_mode = mode
+                logger.info(f"Language mode set to: {mode}")
+                await self.send_json({"type": "language_set", "mode": mode})
 
     async def _handle_audio(self, pcm_data: bytes):
         """Process incoming 16kHz s16le PCM audio from browser."""
@@ -334,10 +342,14 @@ class PipelineSession:
     # ── STT via HTTP ───────────────────────────────────────────────
     async def _run_stt(self, pcm_bytes: bytes) -> str:
         """Send PCM audio to STT service, return text."""
+        # Select STT URL based on language mode
+        stt_url = STT_URL if self.language_mode == "konkani" else MULTILINGUAL_STT_URL
+        logger.info(f"Using STT service: {stt_url} (mode: {self.language_mode})")
+        
         audio_b64 = base64.b64encode(pcm_bytes).decode()
         async with aiohttp.ClientSession() as session:
             async with session.post(
-                f"{STT_URL}/transcribe",
+                f"{stt_url}/transcribe",
                 json={"audio": audio_b64, "sample_rate": AUDIO_IN_RATE},
                 timeout=aiohttp.ClientTimeout(total=30),
             ) as resp:

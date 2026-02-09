@@ -75,3 +75,234 @@
 2026-02-07 21:18:44 | DEBUG    | konkani_agent.utils.latency_optimizer | New turn started - tracking latency
 2026-02-07 21:18:44 | DEBUG    | konkani_agent.utils.latency_optimizer | TTS started: 1770499124.780
 2026-02-07 21:18:44 | INFO     | konkani_agent.utils.latency_optimizer | 🎯 TIME-TO-FIRST-AUDIO: 20.5ms
+2026-02-08 12:22:15 | INFO     | __main__             | ======================================================================
+2026-02-08 12:22:15 | INFO     | __main__             | KONKANI VOICE AGENT v2.0 - ENHANCED
+2026-02-08 12:22:15 | INFO     | __main__             | ======================================================================
+2026-02-08 12:22:15 | INFO     | __main__             | Features: Barge-in, GPU monitoring, Latency optimization, Error recovery
+2026-02-08 12:22:15 | INFO     | __main__             | 
+2026-02-08 12:22:15 | INFO     | __main__             | ✓ STT service connected: {'device': 'cuda', 'language': 'kok', 'model_loaded': True, 'status': 'healthy'}
+2026-02-08 12:22:15 | INFO     | konkani_agent.utils.gpu_monitor | GPUMemoryMonitor initialized (device: cuda:0)
+2026-02-08 12:22:15 | INFO     | konkani_agent.utils.gpu_monitor | GPUMemoryOptimizer initialized
+2026-02-08 12:22:15 | INFO     | konkani_agent.utils.gpu_monitor | GPU memory monitoring started
+2026-02-08 12:22:15 | INFO     | __main__             | ✓ GPU monitoring started
+2026-02-08 12:22:15 | INFO     | konkani_agent.utils.error_handler | ErrorHandler initialized
+2026-02-08 12:22:15 | INFO     | konkani_agent.utils.error_handler |   Max retries: 3
+2026-02-08 12:22:15 | INFO     | konkani_agent.utils.error_handler |   Base delay: 1.0s
+2026-02-08 12:22:15 | INFO     | konkani_agent.utils.latency_optimizer | LatencyOptimizer initialized
+2026-02-08 12:22:15 | INFO     | konkani_agent.utils.latency_optimizer |   Target: 1000ms
+2026-02-08 12:22:15 | INFO     | konkani_agent.utils.latency_optimizer |   Streaming: True
+2026-02-08 12:22:15 | INFO     | konkani_agent.utils.dashboard | Dashboard initialized on port 8080
+2026-02-08 12:22:16 | INFO     | konkani_agent.utils.dashboard | ✓ Dashboard running at http://0.0.0.0:8080
+2026-02-08 12:22:16 | INFO     | __main__             | ✓ Dashboard running at http://localhost:8080
+2026-02-08 12:22:16 | INFO     | __main__             | Building enhanced pipeline...
+2026-02-08 12:22:16 | INFO     | konkani_agent.processors.silero_vad | SileroVADProcessor initialized
+2026-02-08 12:22:16 | INFO     | konkani_agent.processors.silero_vad |   Threshold: 0.5
+2026-02-08 12:22:16 | INFO     | konkani_agent.processors.silero_vad |   Min speech: 250ms
+2026-02-08 12:22:16 | INFO     | konkani_agent.processors.silero_vad |   Min silence: 500ms
+2026-02-08 12:22:16 | INFO     | konkani_agent.processors.barge_in | BargeInHandler initialized
+2026-02-08 12:22:16 | INFO     | konkani_agent.processors.barge_in |   VAD threshold: 0.5
+2026-02-08 12:22:16 | INFO     | konkani_agent.processors.barge_in |   Min interrupt: 400ms
+2026-02-08 12:22:16 | INFO     | konkani_agent.processors.barge_in |   Echo cancellation: True
+2026-02-08 12:22:16 | INFO     | konkani_agent.processors.stt_client | STTClientProcessor initialized
+2026-02-08 12:22:16 | INFO     | konkani_agent.processors.stt_client |   Service URL: http://stt-service-1:50051
+2026-02-08 12:22:16 | INFO     | konkani_agent.processors.stt_client |   Sample rate: 16000Hz
+2026-02-08 12:22:16 | INFO     | konkani_agent.processors.gemini_llm | GeminiProcessor initialized
+2026-02-08 12:22:16 | INFO     | konkani_agent.processors.gemini_llm |   Model: gemini-2.5-flash
+2026-02-08 12:22:16 | INFO     | konkani_agent.processors.gemini_llm |   Temperature: 0.7
+2026-02-08 12:22:16 | INFO     | konkani_agent.processors.gemini_llm |   Max tokens: 512
+2026-02-08 12:22:16 | INFO     | konkani_agent.processors.enhanced_tts | EnhancedTTSProcessor initialized
+2026-02-08 12:22:16 | INFO     | konkani_agent.processors.enhanced_tts |   Primary: xtts
+2026-02-08 12:22:16 | INFO     | konkani_agent.processors.enhanced_tts |   Fallback: parler
+2026-02-08 12:22:16 | INFO     | konkani_agent.processors.enhanced_tts |   Device: cuda (FP16: True)
+2026-02-08 12:22:16 | INFO     | konkani_agent.processors.enhanced_tts |   Sample rate: 24000Hz
+2026-02-08 12:22:16 | DEBUG    | pipecat.processors.frame_processor | Linking PipelineSource#0 -> LocalAudioInputTransport#0
+2026-02-08 12:22:16 | DEBUG    | pipecat.processors.frame_processor | Linking LocalAudioInputTransport#0 -> ErrorHandler#0
+2026-02-08 12:22:16 | DEBUG    | pipecat.processors.frame_processor | Linking ErrorHandler#0 -> LatencyOptimizer#0
+2026-02-08 12:22:16 | DEBUG    | pipecat.processors.frame_processor | Linking LatencyOptimizer#0 -> SileroVADProcessor#0
+2026-02-08 12:22:16 | DEBUG    | pipecat.processors.frame_processor | Linking SileroVADProcessor#0 -> BargeInHandler#0
+2026-02-08 12:22:16 | DEBUG    | pipecat.processors.frame_processor | Linking BargeInHandler#0 -> STTClientProcessor#0
+2026-02-08 12:22:16 | DEBUG    | pipecat.processors.frame_processor | Linking STTClientProcessor#0 -> GeminiProcessor#0
+2026-02-08 12:22:16 | DEBUG    | pipecat.processors.frame_processor | Linking GeminiProcessor#0 -> EnhancedTTSProcessor#0
+2026-02-08 12:22:16 | DEBUG    | pipecat.processors.frame_processor | Linking EnhancedTTSProcessor#0 -> LocalAudioOutputTransport#0
+2026-02-08 12:22:16 | DEBUG    | pipecat.processors.frame_processor | Linking LocalAudioOutputTransport#0 -> PipelineSink#0
+2026-02-08 12:22:16 | DEBUG    | pipecat.processors.frame_processor | Linking Source#0 -> Pipeline#0
+2026-02-08 12:22:16 | DEBUG    | pipecat.processors.frame_processor | Linking Pipeline#0 -> Sink#0
+2026-02-08 12:22:16 | INFO     | __main__             | ✓ Enhanced pipeline ready
+2026-02-08 12:22:16 | INFO     | __main__             | 
+2026-02-08 12:22:16 | INFO     | __main__             | Components:
+2026-02-08 12:22:16 | INFO     | __main__             |   ✓ ErrorHandler (with retry and fallback)
+2026-02-08 12:22:16 | INFO     | __main__             |   ✓ LatencyOptimizer (target <1s TTFA)
+2026-02-08 12:22:16 | INFO     | __main__             |   ✓ SileroVAD
+2026-02-08 12:22:16 | INFO     | __main__             |   ✓ BargeInHandler (interruption support)
+2026-02-08 12:22:16 | INFO     | __main__             |   ✓ STTClient (HTTP)
+2026-02-08 12:22:16 | INFO     | __main__             |   ✓ Gemini LLM
+2026-02-08 12:22:16 | INFO     | __main__             |   ✓ EnhancedTTS (XTTSv2 + fallback)
+2026-02-08 12:22:16 | INFO     | __main__             | 
+2026-02-08 12:22:16 | INFO     | __main__             | Monitoring:
+2026-02-08 12:22:16 | INFO     | __main__             |   ✓ GPU Memory Monitor
+2026-02-08 12:22:16 | INFO     | __main__             |   ✓ Dashboard (http://localhost:8080)
+2026-02-08 12:22:16 | INFO     | __main__             | 
+2026-02-08 12:22:16 | INFO     | __main__             | Instructions:
+2026-02-08 12:22:16 | INFO     | __main__             |   1. Speak into microphone
+2026-02-08 12:22:16 | INFO     | __main__             |   2. VAD detects speech end
+2026-02-08 12:22:16 | INFO     | __main__             |   3. You can INTERRUPT the agent anytime
+2026-02-08 12:22:16 | INFO     | __main__             |   4. Press Ctrl+C to stop
+2026-02-08 12:22:16 | INFO     | __main__             | 
+2026-02-08 12:22:16 | DEBUG    | pipecat.pipeline.runner | Runner PipelineRunner#0 started running PipelineTask#0
+2026-02-08 12:22:16 | DEBUG    | konkani_agent.utils.latency_optimizer | New turn started - tracking latency
+2026-02-08 12:22:16 | DEBUG    | konkani_agent.utils.latency_optimizer | TTS started: 1770553336.376
+2026-02-08 12:22:16 | INFO     | konkani_agent.utils.latency_optimizer | 🎯 TIME-TO-FIRST-AUDIO: 19.7ms
+2026-02-08 12:35:25 | INFO     | __main__             | ======================================================================
+2026-02-08 12:35:25 | INFO     | __main__             | KONKANI VOICE AGENT v2.0 - ENHANCED
+2026-02-08 12:35:25 | INFO     | __main__             | ======================================================================
+2026-02-08 12:35:25 | INFO     | __main__             | Features: Barge-in, GPU monitoring, Latency optimization, Error recovery
+2026-02-08 12:35:25 | INFO     | __main__             | 
+2026-02-08 12:35:25 | INFO     | __main__             | ✓ STT service connected: {'device': 'cuda', 'language': 'kok', 'model_loaded': True, 'status': 'healthy'}
+2026-02-08 12:35:25 | INFO     | konkani_agent.utils.gpu_monitor | GPUMemoryMonitor initialized (device: cuda:0)
+2026-02-08 12:35:25 | INFO     | konkani_agent.utils.gpu_monitor | GPUMemoryOptimizer initialized
+2026-02-08 12:35:25 | INFO     | konkani_agent.utils.gpu_monitor | GPU memory monitoring started
+2026-02-08 12:35:25 | INFO     | __main__             | ✓ GPU monitoring started
+2026-02-08 12:35:25 | INFO     | konkani_agent.utils.error_handler | ErrorHandler initialized
+2026-02-08 12:35:25 | INFO     | konkani_agent.utils.error_handler |   Max retries: 3
+2026-02-08 12:35:25 | INFO     | konkani_agent.utils.error_handler |   Base delay: 1.0s
+2026-02-08 12:35:25 | INFO     | konkani_agent.utils.latency_optimizer | LatencyOptimizer initialized
+2026-02-08 12:35:25 | INFO     | konkani_agent.utils.latency_optimizer |   Target: 1000ms
+2026-02-08 12:35:25 | INFO     | konkani_agent.utils.latency_optimizer |   Streaming: True
+2026-02-08 12:35:25 | INFO     | konkani_agent.utils.dashboard | Dashboard initialized on port 8080
+2026-02-08 12:35:25 | INFO     | konkani_agent.utils.dashboard | ✓ Dashboard running at http://0.0.0.0:8080
+2026-02-08 12:35:25 | INFO     | __main__             | ✓ Dashboard running at http://localhost:8080
+2026-02-08 12:35:25 | INFO     | __main__             | Building enhanced pipeline...
+2026-02-08 12:35:25 | INFO     | konkani_agent.processors.silero_vad | SileroVADProcessor initialized
+2026-02-08 12:35:25 | INFO     | konkani_agent.processors.silero_vad |   Threshold: 0.5
+2026-02-08 12:35:25 | INFO     | konkani_agent.processors.silero_vad |   Min speech: 250ms
+2026-02-08 12:35:25 | INFO     | konkani_agent.processors.silero_vad |   Min silence: 500ms
+2026-02-08 12:35:25 | INFO     | konkani_agent.processors.barge_in | BargeInHandler initialized
+2026-02-08 12:35:25 | INFO     | konkani_agent.processors.barge_in |   VAD threshold: 0.5
+2026-02-08 12:35:25 | INFO     | konkani_agent.processors.barge_in |   Min interrupt: 400ms
+2026-02-08 12:35:25 | INFO     | konkani_agent.processors.barge_in |   Echo cancellation: True
+2026-02-08 12:35:25 | INFO     | konkani_agent.processors.stt_client | STTClientProcessor initialized
+2026-02-08 12:35:25 | INFO     | konkani_agent.processors.stt_client |   Service URL: http://stt-service-1:50051
+2026-02-08 12:35:25 | INFO     | konkani_agent.processors.stt_client |   Sample rate: 16000Hz
+2026-02-08 12:35:25 | INFO     | konkani_agent.processors.gemini_llm | GeminiProcessor initialized
+2026-02-08 12:35:25 | INFO     | konkani_agent.processors.gemini_llm |   Model: gemini-2.5-flash
+2026-02-08 12:35:25 | INFO     | konkani_agent.processors.gemini_llm |   Temperature: 0.7
+2026-02-08 12:35:25 | INFO     | konkani_agent.processors.gemini_llm |   Max tokens: 512
+2026-02-08 12:35:25 | INFO     | konkani_agent.processors.enhanced_tts | EnhancedTTSProcessor initialized
+2026-02-08 12:35:25 | INFO     | konkani_agent.processors.enhanced_tts |   Primary: xtts
+2026-02-08 12:35:25 | INFO     | konkani_agent.processors.enhanced_tts |   Fallback: parler
+2026-02-08 12:35:25 | INFO     | konkani_agent.processors.enhanced_tts |   Device: cuda (FP16: True)
+2026-02-08 12:35:25 | INFO     | konkani_agent.processors.enhanced_tts |   Sample rate: 24000Hz
+2026-02-08 12:35:25 | DEBUG    | pipecat.processors.frame_processor | Linking PipelineSource#0 -> LocalAudioInputTransport#0
+2026-02-08 12:35:25 | DEBUG    | pipecat.processors.frame_processor | Linking LocalAudioInputTransport#0 -> ErrorHandler#0
+2026-02-08 12:35:25 | DEBUG    | pipecat.processors.frame_processor | Linking ErrorHandler#0 -> LatencyOptimizer#0
+2026-02-08 12:35:25 | DEBUG    | pipecat.processors.frame_processor | Linking LatencyOptimizer#0 -> SileroVADProcessor#0
+2026-02-08 12:35:25 | DEBUG    | pipecat.processors.frame_processor | Linking SileroVADProcessor#0 -> BargeInHandler#0
+2026-02-08 12:35:25 | DEBUG    | pipecat.processors.frame_processor | Linking BargeInHandler#0 -> STTClientProcessor#0
+2026-02-08 12:35:25 | DEBUG    | pipecat.processors.frame_processor | Linking STTClientProcessor#0 -> GeminiProcessor#0
+2026-02-08 12:35:25 | DEBUG    | pipecat.processors.frame_processor | Linking GeminiProcessor#0 -> EnhancedTTSProcessor#0
+2026-02-08 12:35:25 | DEBUG    | pipecat.processors.frame_processor | Linking EnhancedTTSProcessor#0 -> LocalAudioOutputTransport#0
+2026-02-08 12:35:25 | DEBUG    | pipecat.processors.frame_processor | Linking LocalAudioOutputTransport#0 -> PipelineSink#0
+2026-02-08 12:35:25 | DEBUG    | pipecat.processors.frame_processor | Linking Source#0 -> Pipeline#0
+2026-02-08 12:35:25 | DEBUG    | pipecat.processors.frame_processor | Linking Pipeline#0 -> Sink#0
+2026-02-08 12:35:25 | INFO     | __main__             | ✓ Enhanced pipeline ready
+2026-02-08 12:35:25 | INFO     | __main__             | 
+2026-02-08 12:35:25 | INFO     | __main__             | Components:
+2026-02-08 12:35:25 | INFO     | __main__             |   ✓ ErrorHandler (with retry and fallback)
+2026-02-08 12:35:25 | INFO     | __main__             |   ✓ LatencyOptimizer (target <1s TTFA)
+2026-02-08 12:35:25 | INFO     | __main__             |   ✓ SileroVAD
+2026-02-08 12:35:25 | INFO     | __main__             |   ✓ BargeInHandler (interruption support)
+2026-02-08 12:35:25 | INFO     | __main__             |   ✓ STTClient (HTTP)
+2026-02-08 12:35:25 | INFO     | __main__             |   ✓ Gemini LLM
+2026-02-08 12:35:25 | INFO     | __main__             |   ✓ EnhancedTTS (XTTSv2 + fallback)
+2026-02-08 12:35:25 | INFO     | __main__             | 
+2026-02-08 12:35:25 | INFO     | __main__             | Monitoring:
+2026-02-08 12:35:25 | INFO     | __main__             |   ✓ GPU Memory Monitor
+2026-02-08 12:35:25 | INFO     | __main__             |   ✓ Dashboard (http://localhost:8080)
+2026-02-08 12:35:25 | INFO     | __main__             | 
+2026-02-08 12:35:25 | INFO     | __main__             | Instructions:
+2026-02-08 12:35:25 | INFO     | __main__             |   1. Speak into microphone
+2026-02-08 12:35:25 | INFO     | __main__             |   2. VAD detects speech end
+2026-02-08 12:35:25 | INFO     | __main__             |   3. You can INTERRUPT the agent anytime
+2026-02-08 12:35:25 | INFO     | __main__             |   4. Press Ctrl+C to stop
+2026-02-08 12:35:25 | INFO     | __main__             | 
+2026-02-08 12:35:25 | DEBUG    | pipecat.pipeline.runner | Runner PipelineRunner#0 started running PipelineTask#0
+2026-02-08 12:35:25 | DEBUG    | konkani_agent.utils.latency_optimizer | New turn started - tracking latency
+2026-02-08 12:35:25 | DEBUG    | konkani_agent.utils.latency_optimizer | TTS started: 1770554125.628
+2026-02-08 12:35:25 | INFO     | konkani_agent.utils.latency_optimizer | 🎯 TIME-TO-FIRST-AUDIO: 21.6ms
+2026-02-08 12:37:30 | INFO     | __main__             | ======================================================================
+2026-02-08 12:37:30 | INFO     | __main__             | KONKANI VOICE AGENT v2.0 - ENHANCED
+2026-02-08 12:37:30 | INFO     | __main__             | ======================================================================
+2026-02-08 12:37:30 | INFO     | __main__             | Features: Barge-in, GPU monitoring, Latency optimization, Error recovery
+2026-02-08 12:37:30 | INFO     | __main__             | 
+2026-02-08 12:37:30 | INFO     | __main__             | ✓ STT service connected: {'device': 'cuda', 'language': 'kok', 'model_loaded': True, 'status': 'healthy'}
+2026-02-08 12:37:30 | INFO     | konkani_agent.utils.gpu_monitor | GPUMemoryMonitor initialized (device: cuda:0)
+2026-02-08 12:37:30 | INFO     | konkani_agent.utils.gpu_monitor | GPUMemoryOptimizer initialized
+2026-02-08 12:37:30 | INFO     | konkani_agent.utils.gpu_monitor | GPU memory monitoring started
+2026-02-08 12:37:30 | INFO     | __main__             | ✓ GPU monitoring started
+2026-02-08 12:37:30 | INFO     | konkani_agent.utils.error_handler | ErrorHandler initialized
+2026-02-08 12:37:30 | INFO     | konkani_agent.utils.error_handler |   Max retries: 3
+2026-02-08 12:37:30 | INFO     | konkani_agent.utils.error_handler |   Base delay: 1.0s
+2026-02-08 12:37:30 | INFO     | konkani_agent.utils.latency_optimizer | LatencyOptimizer initialized
+2026-02-08 12:37:30 | INFO     | konkani_agent.utils.latency_optimizer |   Target: 1000ms
+2026-02-08 12:37:30 | INFO     | konkani_agent.utils.latency_optimizer |   Streaming: True
+2026-02-08 12:37:30 | INFO     | konkani_agent.utils.dashboard | Dashboard initialized on port 8080
+2026-02-08 12:37:30 | INFO     | konkani_agent.utils.dashboard | ✓ Dashboard running at http://0.0.0.0:8080
+2026-02-08 12:37:30 | INFO     | __main__             | ✓ Dashboard running at http://localhost:8080
+2026-02-08 12:37:31 | INFO     | __main__             | Building enhanced pipeline...
+2026-02-08 12:37:31 | INFO     | konkani_agent.processors.silero_vad | SileroVADProcessor initialized
+2026-02-08 12:37:31 | INFO     | konkani_agent.processors.silero_vad |   Threshold: 0.5
+2026-02-08 12:37:31 | INFO     | konkani_agent.processors.silero_vad |   Min speech: 250ms
+2026-02-08 12:37:31 | INFO     | konkani_agent.processors.silero_vad |   Min silence: 500ms
+2026-02-08 12:37:31 | INFO     | konkani_agent.processors.barge_in | BargeInHandler initialized
+2026-02-08 12:37:31 | INFO     | konkani_agent.processors.barge_in |   VAD threshold: 0.5
+2026-02-08 12:37:31 | INFO     | konkani_agent.processors.barge_in |   Min interrupt: 400ms
+2026-02-08 12:37:31 | INFO     | konkani_agent.processors.barge_in |   Echo cancellation: True
+2026-02-08 12:37:31 | INFO     | konkani_agent.processors.stt_client | STTClientProcessor initialized
+2026-02-08 12:37:31 | INFO     | konkani_agent.processors.stt_client |   Service URL: http://stt-service-1:50051
+2026-02-08 12:37:31 | INFO     | konkani_agent.processors.stt_client |   Sample rate: 16000Hz
+2026-02-08 12:37:31 | INFO     | konkani_agent.processors.gemini_llm | GeminiProcessor initialized
+2026-02-08 12:37:31 | INFO     | konkani_agent.processors.gemini_llm |   Model: gemini-2.5-flash
+2026-02-08 12:37:31 | INFO     | konkani_agent.processors.gemini_llm |   Temperature: 0.7
+2026-02-08 12:37:31 | INFO     | konkani_agent.processors.gemini_llm |   Max tokens: 512
+2026-02-08 12:37:31 | INFO     | konkani_agent.processors.enhanced_tts | EnhancedTTSProcessor initialized
+2026-02-08 12:37:31 | INFO     | konkani_agent.processors.enhanced_tts |   Primary: xtts
+2026-02-08 12:37:31 | INFO     | konkani_agent.processors.enhanced_tts |   Fallback: parler
+2026-02-08 12:37:31 | INFO     | konkani_agent.processors.enhanced_tts |   Device: cuda (FP16: True)
+2026-02-08 12:37:31 | INFO     | konkani_agent.processors.enhanced_tts |   Sample rate: 24000Hz
+2026-02-08 12:37:31 | DEBUG    | pipecat.processors.frame_processor | Linking PipelineSource#0 -> LocalAudioInputTransport#0
+2026-02-08 12:37:31 | DEBUG    | pipecat.processors.frame_processor | Linking LocalAudioInputTransport#0 -> ErrorHandler#0
+2026-02-08 12:37:31 | DEBUG    | pipecat.processors.frame_processor | Linking ErrorHandler#0 -> LatencyOptimizer#0
+2026-02-08 12:37:31 | DEBUG    | pipecat.processors.frame_processor | Linking LatencyOptimizer#0 -> SileroVADProcessor#0
+2026-02-08 12:37:31 | DEBUG    | pipecat.processors.frame_processor | Linking SileroVADProcessor#0 -> BargeInHandler#0
+2026-02-08 12:37:31 | DEBUG    | pipecat.processors.frame_processor | Linking BargeInHandler#0 -> STTClientProcessor#0
+2026-02-08 12:37:31 | DEBUG    | pipecat.processors.frame_processor | Linking STTClientProcessor#0 -> GeminiProcessor#0
+2026-02-08 12:37:31 | DEBUG    | pipecat.processors.frame_processor | Linking GeminiProcessor#0 -> EnhancedTTSProcessor#0
+2026-02-08 12:37:31 | DEBUG    | pipecat.processors.frame_processor | Linking EnhancedTTSProcessor#0 -> LocalAudioOutputTransport#0
+2026-02-08 12:37:31 | DEBUG    | pipecat.processors.frame_processor | Linking LocalAudioOutputTransport#0 -> PipelineSink#0
+2026-02-08 12:37:31 | DEBUG    | pipecat.processors.frame_processor | Linking Source#0 -> Pipeline#0
+2026-02-08 12:37:31 | DEBUG    | pipecat.processors.frame_processor | Linking Pipeline#0 -> Sink#0
+2026-02-08 12:37:31 | INFO     | __main__             | ✓ Enhanced pipeline ready
+2026-02-08 12:37:31 | INFO     | __main__             | 
+2026-02-08 12:37:31 | INFO     | __main__             | Components:
+2026-02-08 12:37:31 | INFO     | __main__             |   ✓ ErrorHandler (with retry and fallback)
+2026-02-08 12:37:31 | INFO     | __main__             |   ✓ LatencyOptimizer (target <1s TTFA)
+2026-02-08 12:37:31 | INFO     | __main__             |   ✓ SileroVAD
+2026-02-08 12:37:31 | INFO     | __main__             |   ✓ BargeInHandler (interruption support)
+2026-02-08 12:37:31 | INFO     | __main__             |   ✓ STTClient (HTTP)
+2026-02-08 12:37:31 | INFO     | __main__             |   ✓ Gemini LLM
+2026-02-08 12:37:31 | INFO     | __main__             |   ✓ EnhancedTTS (XTTSv2 + fallback)
+2026-02-08 12:37:31 | INFO     | __main__             | 
+2026-02-08 12:37:31 | INFO     | __main__             | Monitoring:
+2026-02-08 12:37:31 | INFO     | __main__             |   ✓ GPU Memory Monitor
+2026-02-08 12:37:31 | INFO     | __main__             |   ✓ Dashboard (http://localhost:8080)
+2026-02-08 12:37:31 | INFO     | __main__             | 
+2026-02-08 12:37:31 | INFO     | __main__             | Instructions:
+2026-02-08 12:37:31 | INFO     | __main__             |   1. Speak into microphone
+2026-02-08 12:37:31 | INFO     | __main__             |   2. VAD detects speech end
+2026-02-08 12:37:31 | INFO     | __main__             |   3. You can INTERRUPT the agent anytime
+2026-02-08 12:37:31 | INFO     | __main__             |   4. Press Ctrl+C to stop
+2026-02-08 12:37:31 | INFO     | __main__             | 
+2026-02-08 12:37:31 | DEBUG    | pipecat.pipeline.runner | Runner PipelineRunner#0 started running PipelineTask#0
+2026-02-08 12:37:31 | DEBUG    | konkani_agent.utils.latency_optimizer | New turn started - tracking latency
+2026-02-08 12:37:31 | DEBUG    | konkani_agent.utils.latency_optimizer | TTS started: 1770554251.050
+2026-02-08 12:37:31 | INFO     | konkani_agent.utils.latency_optimizer | 🎯 TIME-TO-FIRST-AUDIO: 20.4ms

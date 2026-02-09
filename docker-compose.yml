@@ -6,7 +6,6 @@ services:
       dockerfile: Dockerfile.stt
     image: konkani-stt-service:latest
     container_name: konkani-stt-service
-    runtime: nvidia
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - CUDA_VISIBLE_DEVICES=0
@@ -23,12 +22,56 @@ services:
     networks:
       - konkani-network
     restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [ gpu ]
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:50051/health"]
+      test: [ "CMD", "curl", "-f", "http://localhost:50051/health" ]
       interval: 30s
       timeout: 10s
       retries: 5
       start_period: 120s
+
+  # Multilingual STT Service - For Hindi/English/Other Languages
+  multilingual-stt:
+    build:
+      context: .
+      dockerfile: Dockerfile.stt
+    image: multilingual-stt-service:latest
+    container_name: multilingual-stt-service
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - CUDA_VISIBLE_DEVICES=0
+      - STT_HOST=0.0.0.0
+      - STT_PORT=50052
+      - STT_DEVICE=cuda
+      - STT_LANGUAGE=hi
+      - STT_MODEL_PATH=/app/models/indicconformer_stt_multi_hybrid_rnnt_600m.nemo
+    ports:
+      - "50052:50052"
+    volumes:
+      - ./models:/app/models:ro
+      - ./logs:/app/logs
+    networks:
+      - konkani-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [ gpu ]
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:50052/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 180s
 
   # Main Pipeline - Pipecat with clean dependencies
   pipeline:
@@ -37,20 +80,22 @@ services:
       dockerfile: Dockerfile.pipeline
     image: konkani-pipeline:latest
     container_name: konkani-pipeline
-    runtime: nvidia
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
       - CUDA_VISIBLE_DEVICES=0
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - HF_TOKEN=${HF_TOKEN}
       - STT_SERVICE_URL=http://stt-service:50051
       - DISPLAY=${DISPLAY}
       - PULSE_SERVER=unix:/tmp/pulseaudio.socket
       - PULSE_COOKIE=/tmp/pulseaudio.cookie
+      - MULTILINGUAL_STT_URL=http://multilingual-stt:50052
     volumes:
       - .:/app:ro
       - ./logs:/app/logs
       - /tmp/pulseaudio.socket:/tmp/pulseaudio.socket
       - /tmp/pulseaudio.cookie:/tmp/pulseaudio.cookie
+      - ~/.cache/huggingface:/root/.cache/huggingface
     networks:
       - konkani-network
     depends_on:
@@ -61,6 +106,65 @@ services:
     privileged: true
     devices:
       - /dev/snd:/dev/snd
+    ports:
+      - "8765:8765"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [ gpu ]
+
+  # Multilingual Pipeline - Hindi/English (uses ws_pipeline_multi.py)
+  pipeline-multi:
+    build:
+      context: .
+      dockerfile: Dockerfile.pipeline
+    image: konkani-pipeline-multi:latest
+    container_name: konkani-pipeline-multi
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - CUDA_VISIBLE_DEVICES=0
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - HF_TOKEN=${HF_TOKEN}
+      - MULTILINGUAL_STT_URL=http://multilingual-stt:50052
+      - WS_PORT=8766
+    volumes:
+      - .:/app:ro
+      - ./logs:/app/logs
+      - ~/.cache/huggingface:/root/.cache/huggingface
+    networks:
+      - konkani-network
+    depends_on:
+      multilingual-stt:
+        condition: service_healthy
+    stdin_open: true
+    tty: true
+    ports:
+      - "8766:8766"
+    command: [ "python", "/app/ws_pipeline_multi.py" ]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [ gpu ]
+
+  # Web UI - Serves static frontend files
+  web-ui:
+    image: python:3.10-slim
+    container_name: konkani-web-ui
+    working_dir: /app
+    volumes:
+      - ./web_ui:/app
+    ports:
+      - "8080:8080"
+    command: [ "python3", "-m", "http.server", "8080" ]
+    networks:
+      - konkani-network
+    restart: unless-stopped
 
 networks:
   konkani-network:

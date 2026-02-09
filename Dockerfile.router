@@ -1,0 +1,49 @@
+# Dockerfile for Language-Aware Speech Router
+# Routes audio streams to Konkani or Multilingual ASR based on language detection
+#
+# Uses the same NeMo base image as stt-service for model compatibility
+
+FROM nvcr.io/nvidia/nemo:24.01.speech
+
+# Prevent interactive prompts during build
+ENV DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1
+
+# Install AI4Bharat NeMo fork (required for multilingual tokenizer support)
+RUN pip uninstall -y nemo-toolkit && \
+    pip install git+https://github.com/AI4Bharat/NeMo.git@nemo-v2#egg=nemo_toolkit[asr]
+
+# Install additional dependencies for the router
+RUN pip install flask loguru aiohttp requests websockets
+
+# Create app directory
+WORKDIR /app
+
+# Copy router code
+COPY language_aware_router.py /app/
+
+# Environment variables
+ENV ROUTER_HOST=0.0.0.0
+ENV ROUTER_PORT=50052
+ENV ROUTER_DEVICE=cuda
+ENV PYTHONPATH=/app
+
+# Model paths (mounted at runtime)
+ENV KONKANI_MODEL_PATH=/app/models/indicconformer_stt_kok_hybrid_rnnt_large.nemo
+ENV MULTILINGUAL_MODEL_PATH=/app/models/indic-conformer-600m-multilingual.nemo
+
+# Sticky routing duration (seconds)
+ENV STICKY_DURATION=10.0
+
+# Konkani confidence threshold for routing
+ENV KONKANI_THRESHOLD=0.8
+
+# Expose port for WebSocket connections
+EXPOSE 50052
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=180s --retries=5 \
+    CMD curl -f http://localhost:50052/health || exit 1
+
+# Run the router
+CMD ["python", "/app/language_aware_router.py"]

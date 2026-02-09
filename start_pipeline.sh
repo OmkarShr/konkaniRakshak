@@ -50,5 +50,5 @@ echo "  LLM: Gemini API"
 echo "  TTS: Coqui XTTSv2 (optional)"
 echo ""
 
-# Run pipeline
-python src/konkani_agent/main.py
+# Run WebSocket pipeline for browser connections
+python /app/ws_pipeline.py

@@ -34,10 +34,13 @@ services:
       dockerfile: Dockerfile.pipeline
     container_name: konkani-pipeline-1
     runtime: nvidia
+    ports:
+      - "8765:8765"
     environment:
       - NVIDIA_VISIBLE_DEVICES=0
       - CUDA_VISIBLE_DEVICES=0
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - HF_TOKEN=${HF_TOKEN}
       - STT_SERVICE_URL=http://stt-service-1:50051
       - TTS_VOICE=${TTS_VOICE:-female}
       - DISPLAY=${DISPLAY}
@@ -85,6 +88,8 @@ services:
       dockerfile: Dockerfile.pipeline
     container_name: konkani-pipeline-2
     runtime: nvidia
+    ports:
+      - "8766:8765"
     environment:
       - NVIDIA_VISIBLE_DEVICES=1
       - CUDA_VISIBLE_DEVICES=1
