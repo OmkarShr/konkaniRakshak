@@ -1,0 +1,110 @@
+# Redundant Files Analysis
+
+## ✅ **ACTIVE FILES** (Currently Used)
+
+### Pipeline Files (3 files)
+- `ws_pipeline_english.py` - English pipeline ✅ **ACTIVE**
+- `ws_pipeline_hindi.py` - Hindi pipeline ✅ **ACTIVE**
+- `ws_pipeline_multi.py` - Multi pipeline ⚠️ **STOPPED** (can archive)
+
+### Startup Scripts (3 files)
+- `start_pipeline_english.sh` - English startup ✅ **ACTIVE**
+- `start_pipeline_hindi.sh` - Hindi startup ✅ **ACTIVE**
+- `start_pipeline_multi.sh` - Multi startup ⚠️ **STOPPED** (can archive)
+
+### Docker Files (4 files)
+- `Dockerfile.pipeline` - Pipeline container ✅ **ACTIVE**
+- `Dockerfile.stt` - STT service container ✅ **ACTIVE**
+- `docker-compose.yml` - Main orchestration ✅ **ACTIVE**
+- `.dockerignore` - Docker ignore rules ✅ **ACTIVE**
+
+### Configuration (2 files)
+- `.env` - Environment variables ✅ **ACTIVE**
+- `requirements.txt` - Python dependencies ✅ **ACTIVE**
+
+### Service Files (1 file)
+- `services/stt_service.py` - STT HTTP service ✅ **ACTIVE**
+
+---
+
+## ❌ **REDUNDANT FILES** (Not Currently Used)
+
+### 1. Old Pipeline Files (2 files)
+- `ws_pipeline.py` - Old Konkani pipeline (stopped)
+- `ws_pipeline_multi.py` - Multi pipeline (stopped)
+
+**Why redundant:** These pipelines are stopped to save GPU memory. Only English/Hindi pipelines are active.
+
+**Action:** Move to `archive/legacy_scripts/`
+
+---
+
+### 2. Old Startup Script (1 file)
+- `start_pipeline.sh` - Old Konkani startup
+- `start_pipeline_multi.sh` - Multi startup (if old Konkani is archived)
+
+**Why redundant:** Konkani pipeline is stopped.
+
+**Action:** Move to `archive/legacy_scripts/`
+
+---
+
+### 3. Test/Development Files (Still in root!)
+These should have been moved but may still exist:
+- `quick_start.py`
+- `quick_start_multi.py`
+- `quick_start_multi_2.py`
+
+**Check:** These may already be in archive/tests/
+
+---
+
+### 4. Analysis/Documentation Files
+- `PORT_ANALYSIS.txt` - Just created, can archive after reading
+- `CLEANUP_PLAN.md` - Already moved to archive
+- Any other .txt files
+
+---
+
+## 📊 Summary
+
+### Must Keep (13 essential files)
+1. `ws_pipeline_english.py`
+2. `ws_pipeline_hindi.py`
+3. `start_pipeline_english.sh`
+4. `start_pipeline_hindi.sh`
+5. `Dockerfile.pipeline`
+6. `Dockerfile.stt`
+7. `docker-compose.yml`
+8. `.dockerignore`
+9. `.env`
+10. `requirements.txt`
+11. `services/stt_service.py`
+12. `.gitignore`
+13. `web_ui/` directory
+
+### Can Archive (4 files)
+1. `ws_pipeline.py` → archive/legacy_scripts/
+2. `ws_pipeline_multi.py` → archive/legacy_scripts/
+3. `start_pipeline.sh` → archive/legacy_scripts/
+4. `start_pipeline_multi.sh` → archive/legacy_scripts/
+
+### Already Archived (38+ files)
+- All .md files
+- Test scripts
+- Setup scripts
+- Old deployment scripts
+- Old documentation
+
+---
+
+## 🎯 **Recommended Cleanup**
+
+Move remaining redundant files:
+```bash
+mv ws_pipeline.py ws_pipeline_multi.py archive/legacy_scripts/
+mv start_pipeline.sh start_pipeline_multi.sh archive/legacy_scripts/
+mv PORT_ANALYSIS.txt archive/old_docs/
+```
+
+**Result:** Clean project with only 13 essential production files!

@@ -57,7 +57,8 @@ RUN pip install \
     psutil \
     websockets \
     google-generativeai \
-    pipecat-ai==0.0.49
+    pipecat-ai==0.0.49 \
+    ollama
 
 # Install Parler-TTS from source
 RUN pip install git+https://github.com/huggingface/parler-tts.git
@@ -74,13 +75,18 @@ COPY config/ /app/config/
 COPY services/ /app/services/
 COPY ws_pipeline.py /app/
 COPY start_pipeline.sh /app/
+COPY ws_pipeline_multi.py /app/
+COPY ws_pipeline_english.py /app/
+COPY ws_pipeline_hindi.py /app/
+COPY start_pipeline_english.sh /app/
+COPY start_pipeline_hindi.sh /app/
 
 # Set environment
 ENV PYTHONPATH=/app/src
 ENV PYTHONUNBUFFERED=1
 
-# Expose WebSocket port
-EXPOSE 8765
+# Expose WebSocket ports
+EXPOSE 8765 8766 8767 8768
 
 # Default command: run the real-time WebSocket pipeline
 CMD ["bash", "/app/start_pipeline.sh"]

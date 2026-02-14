@@ -42,8 +42,7 @@ WS_HOST = "0.0.0.0"
 WS_PORT = int(os.getenv("WS_PORT", "8765"))
 STT_URL = os.getenv("STT_SERVICE_URL", "http://konkani-stt-1:50051")
 MULTILINGUAL_STT_URL = os.getenv("MULTILINGUAL_STT_URL", "http://language-router:50052")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+
 
 AUDIO_IN_RATE = 16000       # from browser mic
 AUDIO_OUT_RATE = 44100      # from Indic Parler-TTS
@@ -53,14 +52,17 @@ OUT_CHUNK = AUDIO_OUT_RATE * CHUNK_MS // 1000  # 882 samples
 VAD_CHUNK = 512             # Silero VAD minimum: 512 samples at 16kHz (32ms)
 
 VAD_THRESHOLD = 0.50
+VAD_THRESHOLD = 0.50
 MIN_SPEECH_MS = 200         # reduced from 300 to avoid missing initial words
-MIN_SILENCE_MS = 600
-MAX_RECORD_S = 20
+MIN_SILENCE_MS = 1200       # Increased to 1.2s
+MAX_RECORD_S = 30
 
 PRE_BUFFER_MS = 500         # keep last 500ms of audio before speech confirmation
 PRE_BUFFER_BYTES = int(AUDIO_IN_RATE * 2 * PRE_BUFFER_MS / 1000)  # 16000 bytes
 
 TTS_SPEAKER_DESC = "Sanjay speaks with a moderate pace and a clear, close-sounding recording with no background noise."
+
+FALLBACK_RESPONSE = "माफ करा, म्हाका तुमचें म्हणणें समजूंक ना. कृपया परत सांगात." # Sorry, I didn't understand. Please say it again.
 
 SYSTEM_PROMPT = (
     "तूं एक कोंकणी भाशेंतलो (देवनागरी लिपींत) सहाय्यक आसा. "
@@ -77,7 +79,7 @@ vad_model = None
 tts_model = None
 tts_tokenizer = None
 tts_desc_tokenizer = None
-gemini_model = None
+
 tts_executor = ThreadPoolExecutor(max_workers=1)
 
 
@@ -117,12 +119,15 @@ def load_models():
     )
     logger.info("  TTS loaded + warmed up")
 
-    # ── 3. Gemini ──
-    logger.info("Loading Gemini ...")
-    import google.generativeai as genai
-    genai.configure(api_key=GEMINI_API_KEY)
-    gemini_model = genai.GenerativeModel(GEMINI_MODEL)
-    logger.info("  Gemini ready")
+    # ── 3. LLM (Ollama) ──
+    logger.info("LLM backend: Ollama (qwen2.5:0.5b)")
+    try:
+        import ollama
+        logger.info("  Warming up Ollama...")
+        ollama.Client(host=os.getenv("OLLAMA_URL")).chat(model="gemma2:2b", messages=[{"role": "user", "content": "hi"}])
+        logger.info("  Ollama ready")
+    except Exception as e:
+        logger.warning(f"  Ollama warmup failed: {e}")
 
 
 # ═══════════════════════════════════════════════════════════════════
@@ -360,54 +365,47 @@ class PipelineSession:
                     logger.error(f"STT error {resp.status}")
                     return ""
 
-    # ── LLM via Gemini ─────────────────────────────────────────────
+    # ── LLM via Ollama ─────────────────────────────────────────────
     async def _run_llm(self, user_text: str) -> str:
         self.conversation.append({"role": "user", "content": user_text})
 
+        # Convert conversation history to Ollama format
         messages = []
-        messages.append({"role": "user", "parts": [SYSTEM_PROMPT]})
-        messages.append({"role": "model", "parts": ["व्हय, हांव समजलों. हांव फकत कोंकणी भाशेंत उलयतलों."]})
+        messages.append({"role": "system", "content": SYSTEM_PROMPT})
+        
+        # Add greeting as assistant message if needed, or just rely on system prompt
+        # messages.append({"role": "assistant", "content": "व्हय, हांव समजलों. हांव फकत कोंकणी भाशेंत उलयतलों."})
 
-        for msg in self.conversation[-10:]:
-            role = "user" if msg["role"] == "user" else "model"
-            messages.append({"role": role, "parts": [msg["content"]]})
+        for msg in self.conversation[-6:]:
+            role = "user" if msg["role"] == "user" else "assistant"
+            messages.append({"role": role, "content": msg["content"]})
 
-        loop = asyncio.get_event_loop()
-
-        # Retry with exponential backoff for 429 rate-limit errors
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                response = await asyncio.wait_for(
-                    loop.run_in_executor(
-                        None,
-                        lambda: gemini_model.generate_content(
-                            messages,
-                            generation_config={"temperature": 0.7, "max_output_tokens": 300},
-                        ),
-                    ),
-                    timeout=30.0,
+        try:
+            import ollama
+            
+            # Use synchronous client in executor to avoid blocking asyncio loop
+            loop = asyncio.get_event_loop()
+            
+            response = await loop.run_in_executor(
+                None,
+                lambda: ollama.Client(host=os.getenv("OLLAMA_URL")).chat(
+                    model="gemma2:2b",
+                    messages=messages,
+                    stream=False
                 )
+            )
+            
+            text = response['message']['content'].strip()
+            self.conversation.append({"role": "assistant", "content": text})
+            return text
 
-                text = response.text.strip()
-                self.conversation.append({"role": "assistant", "content": text})
-                return text
-
-            except asyncio.TimeoutError:
-                logger.error("LLM call timed out after 30s")
-                return ""
-            except Exception as e:
-                err_str = str(e)
-                if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
-                    wait = 2 ** attempt + 1
-                    logger.warning(f"LLM rate-limited (429), retrying in {wait}s (attempt {attempt+1}/{max_retries})")
-                    await asyncio.sleep(wait)
-                    continue
-                logger.error(f"LLM error: {e}\n{traceback.format_exc()}")
-                return ""
-
-        logger.error("LLM: all retries exhausted (429)")
-        return ""
+        except Exception as e:
+            logger.error(f"LLM error: {e}\n{traceback.format_exc()}")
+            return FALLBACK_RESPONSE
+            
+        if not text:
+            return FALLBACK_RESPONSE
+        return text
 
     # ── TTS (streaming chunks) ─────────────────────────────────────
     async def _run_tts_streaming(self, text: str):
@@ -484,9 +482,26 @@ class PipelineSession:
 #  WebSocket server
 # ═══════════════════════════════════════════════════════════════════
 
+# -- Global Session Persistence --
+GLOBAL_SESSIONS = {}  # {client_ip: conversation_history_list}
+
 async def handle_client(ws):
+    client_ip = ws.remote_address[0] if ws.remote_address else "unknown"
+    logger.info(f"New connection from {client_ip}")
+
     session = PipelineSession(ws)
-    await session.run()
+    
+    # Restore history if exists
+    if client_ip in GLOBAL_SESSIONS:
+        logger.info(f"Restoring session for {client_ip} ({len(GLOBAL_SESSIONS[client_ip])} msgs)")
+        session.conversation = GLOBAL_SESSIONS[client_ip]
+    
+    try:
+        await session.run()
+    finally:
+        # Save history
+        GLOBAL_SESSIONS[client_ip] = session.conversation
+        logger.info(f"Saved session for {client_ip}")
 
 
 async def main():
@@ -494,9 +509,10 @@ async def main():
     logger.info("  Konkani Voice Agent -- Real-time Pipeline Server")
     logger.info("=" * 60)
 
-    if not GEMINI_API_KEY:
-        logger.error("GEMINI_API_KEY not set!")
-        sys.exit(1)
+    # Validating environment
+    # if not GEMINI_API_KEY:
+    #     logger.error("GEMINI_API_KEY not set!")
+    #     sys.exit(1)
 
     # Load all models
     load_models()
@@ -504,7 +520,7 @@ async def main():
     logger.info("")
     logger.info(f"  WebSocket server: ws://{WS_HOST}:{WS_PORT}")
     logger.info(f"  STT service:      {STT_URL}")
-    logger.info(f"  Gemini model:     {GEMINI_MODEL}")
+
     logger.info(f"  TTS voice:        Indic Parler-TTS (Sanjay)")
     logger.info("")
     logger.info("  Waiting for browser connections ...")
@@ -515,8 +531,8 @@ async def main():
         WS_HOST,
         WS_PORT,
         max_size=10 * 1024 * 1024,  # 10MB max message
-        ping_interval=30,
-        ping_timeout=10,
+        ping_interval=None,         # Disable keepalive pings to prevent timeout
+        ping_timeout=None,          # Disable timeout
     ):
         await asyncio.Future()   # run forever
 

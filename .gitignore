@@ -41,3 +41,4 @@ htmlcov/
 
 # Docker
 .docker/
+ollama_data/

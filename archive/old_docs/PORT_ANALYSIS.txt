@@ -1,0 +1,176 @@
+# Port Configuration Analysis
+
+## 🔍 Current Port Mapping
+
+### ✅ **ACTIVE PORTS** (Currently Running)
+
+| External Port | Internal Port | Container | Purpose | Status |
+|---------------|---------------|-----------|---------|--------|
+| **7777** | 8080 | `konkani-web-ui` | Web UI (HTTP) | ✅ **ACTIVE** |
+| **8767** | 8767 | `konkani-pipeline-english` | English WebSocket | ✅ **ACTIVE** |
+| **8768** | 8768 | `konkani-pipeline-hindi` | Hindi WebSocket | ✅ **ACTIVE** |
+| **50051** | 50051 | `konkani-stt-service` | Konkani STT (HTTP) | ✅ **ACTIVE** |
+| **50052** | 50052 | `multilingual-stt-service` | Multilingual STT (HTTP) | ✅ **ACTIVE** |
+| **11435** | 11434 | `konkani-ollama` | Ollama LLM (HTTP) | ✅ **ACTIVE** |
+
+---
+
+### ❌ **STOPPED/UNUSED PORTS** (Defined but not running)
+
+| External Port | Internal Port | Container | Purpose | Status |
+|---------------|---------------|-----------|---------|--------|
+| **8765** | 8765 | `konkani-pipeline` | Konkani WebSocket | ⛔ **STOPPED** |
+| **8766** | 8766 | `konkani-pipeline-multi` | Multi WebSocket | ⛔ **STOPPED** |
+
+---
+
+## 🔗 Connection Flow
+
+```mermaid
+graph TB
+    User[User Browser<br/>Port 7777]
+    
+    User -->|HTTP GET| WebUI[Web UI Container<br/>Port 7777:8080]
+    
+    WebUI -->|WebSocket| EngPipe[English Pipeline<br/>Port 8767]
+    WebUI -->|WebSocket| HinPipe[Hindi Pipeline<br/>Port 8768]
+    
+    EngPipe -->|HTTP POST| MultiSTT[Multilingual STT<br/>Port 50052]
+    HinPipe -->|HTTP POST| MultiSTT
+    
+    EngPipe -->|HTTP POST| LLM[Ollama LLM<br/>Port 11435:11434]
+    HinPipe -->|HTTP POST| LLM
+    
+    KokSTT[Konkani STT<br/>Port 50051]
+    
+    style User fill:#4CAF50,stroke:#333,stroke-width:3px,color:#fff
+    style WebUI fill:#2196F3,stroke:#333,stroke-width:2px,color:#fff
+    style EngPipe fill:#FF9800,stroke:#333,stroke-width:2px,color:#fff
+    style HinPipe fill:#9C27B0,stroke:#333,stroke-width:2px,color:#fff
+    style MultiSTT fill:#00BCD4,stroke:#333,stroke-width:2px,color:#fff
+    style LLM fill:#E91E63,stroke:#333,stroke-width:2px,color:#fff
+    style KokSTT fill:#999,stroke:#333,stroke-width:2px,stroke-dasharray: 5 5,color:#fff
+```
+
+---
+
+## ⚠️ Issues & Recommendations
+
+### 1. **Unused Internal Ports Exposed** ❌
+The pipeline containers expose multiple unnecessary internal ports:
+
+**English Pipeline:**
+- `8765-8766/tcp` - **NOT NEEDED** (exposed but not used)
+- `8768/tcp` - **NOT NEEDED** (exposed but not used)
+
+**Hindi Pipeline:**
+- `8765-8767/tcp` - **NOT NEEDED** (exposed but not used)
+
+**Root Cause:** Dockerfile exposes all ports (8765, 8766, 8767, 8768), but each container only uses ONE port.
+
+**Impact:** Minimal - these are not mapped to host, so no security issue, just clutter.
+
+---
+
+### 2. **Konkani STT Service Running but Unused** ⚠️
+- Port **50051** is active and healthy
+- Uses GPU memory (~3GB VRAM)
+- **NOT connected to any pipeline** (English/Hindi use port 50052)
+
+**Recommendation:** Stop this service to free GPU memory.
+
+---
+
+### 3. **Stopped Pipelines Still Defined** ⚠️
+- `konkani-pipeline` (port 8765) - stopped
+- `konkani-pipeline-multi` (port 8766) - stopped
+
+**Recommendation:** Remove from docker-compose.yml if not needed.
+
+---
+
+### 4. **NeMo Framework Ports** ℹ️
+Both STT services expose unnecessary NeMo framework ports:
+- `6006/tcp` - TensorBoard (not used)
+- `8888/tcp` - Jupyter (not used)
+
+**Impact:** Minimal - internal only, not exposed to host.
+
+---
+
+## ✅ Cross-Connections Analysis
+
+### No Cross-Connections Found ✅
+All services connect correctly:
+
+1. **Web UI (7777)** → WebSocket to pipelines (8767, 8768)
+2. **English Pipeline (8767)** → STT (50052) + LLM (11435)
+3. **Hindi Pipeline (8768)** → STT (50052) + LLM (11435)
+
+**No circular dependencies** ✅  
+**No conflicts** ✅  
+**Proper service isolation** ✅
+
+---
+
+## 🧹 Cleanup Recommendations
+
+### Option 1: **Minimal Cleanup** (Keep flexibility)
+```bash
+# Just stop Konkani STT to free GPU memory
+docker compose stop stt-service
+```
+**Saves:** ~3GB VRAM
+
+---
+
+### Option 2: **Moderate Cleanup** (Recommended)
+```bash
+# Remove unused services from docker-compose.yml:
+# - stt-service (Konkani STT - not connected)
+# - pipeline (old Konkani - stopped)
+# - pipeline-multi (old Multi - stopped)
+```
+**Saves:** ~3GB VRAM + cleaner configuration
+
+---
+
+### Option 3: **Aggressive Cleanup**
+Fix Dockerfile to only expose required ports:
+```dockerfile
+# OLD: EXPOSE 8765 8766 8767 8768
+# NEW: EXPOSE 8767  (for English)
+# NEW: EXPOSE 8768  (for Hindi)
+```
+
+---
+
+## 📊 Final Port Summary
+
+### Actively Used (6 ports)
+✅ 7777 - Web UI  
+✅ 8767 - English Pipeline  
+✅ 8768 - Hindi Pipeline  
+✅ 11435 - Ollama LLM  
+✅ 50052 - Multilingual STT  
+✅ 50051 - Konkani STT **(UNUSED - can stop)**
+
+### Defined but Stopped (2 ports)
+⛔ 8765 - Konkani Pipeline  
+⛔ 8766 - Multi Pipeline
+
+### Total Port Usage
+- **5 essential ports** (7777, 8767, 8768, 11435, 50052)
+- **1 unused port** (50051 - can stop)
+- **2 stopped ports** (8765, 8766 - can remove)
+
+---
+
+## 🎯 Recommended Action
+
+**Stop Konkani STT service** (saves GPU memory without breaking anything):
+```bash
+docker compose stop stt-service
+```
+
+This will free up ~3GB VRAM and reduce to **5 active ports** total.

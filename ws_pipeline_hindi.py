@@ -1,14 +1,14 @@
 """
-Konkani Voice Agent -- Multi-language Pipeline Server (English + Hindi)
-======================================================================
+Konkani Voice Agent -- Hindi-Only Pipeline Server
+==================================================
 
-Runs a WebSocket pipeline for English and Hindi using:
+Runs a WebSocket pipeline for Hindi using:
   - Voxtral STT (via vLLM Realtime WebSocket API on GPU 1)
-  - Gemini LLM (with language-specific system prompts)
+  - Ollama LLM (gemma2:2b with TTS-friendly prompts)
   - Indic Parler-TTS (shared model on GPU 0)
 
-This file runs INSIDE the Docker pipeline-2 container on GPU 0.
-It does NOT touch or affect the Konkani pipeline (pipeline-1).
+This file runs INSIDE a Docker pipeline container on GPU 0.
+Dedicated Hindi-only pipeline on port 8768.
 """
 
 import asyncio
@@ -41,10 +41,9 @@ logger.add(
 
 # -- Configuration --
 WS_HOST = "0.0.0.0"
-WS_PORT = int(os.getenv("WS_PORT", "8766"))
+WS_PORT = int(os.getenv("WS_PORT", "8768"))
 STT_URL = os.getenv("MULTILINGUAL_STT_URL", "http://multilingual-stt:50052")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+
 
 AUDIO_IN_RATE = 16000       # from browser mic
 AUDIO_OUT_RATE = 44100      # from Indic Parler-TTS
@@ -55,50 +54,41 @@ VAD_CHUNK = 512             # Silero VAD minimum: 512 samples at 16kHz
 
 VAD_THRESHOLD = 0.50
 MIN_SPEECH_MS = 200
-MIN_SILENCE_MS = 600
-MAX_RECORD_S = 20
+MIN_SILENCE_MS = 1200       # Increased to 1.2s to prevent premature cutoff
+MAX_RECORD_S = 30           # Increased to 30s
 
 PRE_BUFFER_MS = 500
 PRE_BUFFER_BYTES = int(AUDIO_IN_RATE * 2 * PRE_BUFFER_MS / 1000)
 
-# Language-specific configurations
-LANG_CONFIG = {
-    "en": {
-        "system_prompt": (
-            "You are an assistant for the Goa Police to help file FIRs (First Information Reports). "
-            "Always respond in English. Keep responses short and clear. "
-            "Ask for necessary details: complainant name, incident description, date, time, location. "
-            "Do not use any other language."
-        ),
-        "tts_speaker_desc": "Sanjay speaks with a moderate pace and a clear, close-sounding recording with no background noise.",
-        "tts_lang_hint": "en",
-        "greeting": "Yes, I understand. I will only speak in English.",
-    },
-    "hi": {
-        "system_prompt": (
-            "आप गोवा पुलिस के लिए एफआईआर (प्रथम सूचना रिपोर्ट) दर्ज करने में सहायता करने वाले सहायक हैं। "
-            "हमेशा हिंदी में जवाब दें। जवाब छोटे और स्पष्ट रखें। "
-            "आवश्यक विवरण पूछें: शिकायतकर्ता का नाम, घटना का विवरण, तारीख, समय, स्थान। "
-            "अंग्रेजी का उपयोग न करें।"
-        ),
-        "tts_speaker_desc": "Sanjay speaks with a moderate pace and a clear, close-sounding recording with no background noise.",
-        "tts_lang_hint": "hi",
-        "greeting": "हाँ, मैं समझ गया। मैं केवल हिंदी में बात करूँगा।",
-    },
-}
+FALLBACK_RESPONSE = "Sorry, I am having trouble connecting to my brain right now. Please try again."
+
+# Hindi-only configuration with TTS-friendly prompt
+SYSTEM_PROMPT = (
+    "आप गोवा पुलिस के लिए एफआईआर (प्रथम सूचना रिपोर्ट) दर्ज करने में सहायता करने वाले सहायक हैं। "
+    "हमेशा हिंदी में जवाब दें। जवाब छोटे और स्पष्ट रखें। "
+    "आवश्यक विवरण पूछें: शिकायतकर्ता का नाम, घटना का विवरण, तारीख, समय, स्थान। "
+    "\n\nमहत्वपूर्ण: अपने उत्तरों में विशेष चिह्नों या प्रतीकों का उपयोग न करें जो टेक्स्ट-टू-स्पीच को भ्रमित कर सकते हैं। "
+    "उद्धरण चिह्न, तारक चिह्न और अन्य प्रतीकों से बचें। स्वाभाविक हिंदी में स्पष्ट रूप से लिखें।"
+)
+
+TTS_SPEAKER_DESC = "Sanjay speaks with a moderate pace and a clear, close-sounding recording with no background noise."
+TTS_LANG_HINT = "hi"
 
 # -- Global model holders (loaded once at startup) --
 vad_model = None
 tts_model = None
 tts_tokenizer = None
 tts_desc_tokenizer = None
-gemini_model = None
+
 tts_executor = ThreadPoolExecutor(max_workers=1)
+
+# DEBUG: frame counter for throttled VAD logging
+_debug_frame_count = 0
 
 
 def load_models():
     """Load all heavy models once at process start."""
-    global vad_model, tts_model, tts_tokenizer, tts_desc_tokenizer, gemini_model
+    global vad_model, tts_model, tts_tokenizer, tts_desc_tokenizer
 
     # -- 1. Silero VAD --
     import torch
@@ -132,12 +122,16 @@ def load_models():
     )
     logger.info("  TTS loaded + warmed up")
 
-    # -- 3. Gemini --
-    logger.info("Loading Gemini ...")
-    import google.generativeai as genai
-    genai.configure(api_key=GEMINI_API_KEY)
-    gemini_model = genai.GenerativeModel(GEMINI_MODEL)
-    logger.info("  Gemini ready")
+    # -- 3. LLM (Ollama) --
+    logger.info("LLM backend: Ollama (gemma2:2b)")
+    # Warmup to force model load
+    try:
+        import ollama
+        logger.info("  Warming up Ollama (forcing model load)...")
+        ollama.Client(host=os.getenv("OLLAMA_URL")).chat(model="gemma2:2b", messages=[{"role": "user", "content": "hi"}])
+        logger.info("  Ollama warmed up!")
+    except Exception as e:
+        logger.warning(f"  Ollama warmup failed: {e}")
 
 
 # ==================================================================
@@ -149,7 +143,6 @@ class PipelineSession:
 
     def __init__(self, ws):
         self.ws = ws
-        self.language = "en"          # default, set by client on connect
         self.conversation: list[dict] = []
         self.audio_buffer = bytearray()
         self.vad_buffer = bytearray()
@@ -160,10 +153,6 @@ class PipelineSession:
         self.agent_speaking = False
         self._cancel_tts = False
         self._tts_task: Optional[asyncio.Task] = None
-
-    @property
-    def lang_cfg(self):
-        return LANG_CONFIG.get(self.language, LANG_CONFIG["en"])
 
     # -- Send helpers --
     async def send_json(self, msg: dict):
@@ -189,7 +178,7 @@ class PipelineSession:
 
     # -- Main receive loop --
     async def run(self):
-        logger.info(f"[Multi] Session started: {self.ws.remote_address}")
+        logger.info(f"[Hindi] Session started: {self.ws.remote_address}")
         vad_model.reset_states()
         await self.send_json({"type": "ready"})
 
@@ -203,7 +192,7 @@ class PipelineSession:
         except websockets.ConnectionClosed:
             pass
         finally:
-            logger.info(f"[Multi] Session ended: {self.ws.remote_address}")
+            logger.info(f"[Hindi] Session ended: {self.ws.remote_address}")
 
     async def _handle_control(self, data: dict):
         cmd = data.get("type", "")
@@ -212,22 +201,18 @@ class PipelineSession:
             await self.send_json({"type": "reset_ok"})
         elif cmd == "ping":
             await self.send_json({"type": "pong"})
-        elif cmd == "set_language":
-            lang = data.get("language", "en")
-            if lang in LANG_CONFIG:
-                self.language = lang
-                logger.info(f"[Multi] Language set to: {lang}")
-                await self.send_json({"type": "language_set", "language": lang})
-            else:
-                await self.send_json({"type": "error", "message": f"Unsupported language: {lang}"})
 
     async def _handle_audio(self, pcm_data: bytes):
+        global _debug_frame_count
         self.vad_buffer.extend(pcm_data)
         vad_frame_bytes = VAD_CHUNK * 2
 
         while len(self.vad_buffer) >= vad_frame_bytes:
             frame = bytes(self.vad_buffer[:vad_frame_bytes])
             self.vad_buffer = self.vad_buffer[vad_frame_bytes:]
+            _debug_frame_count += 1
+            if _debug_frame_count % 100 == 1:  # Print every 100th frame (~3.2s)
+                print(f"[DEBUG-HI] Audio frame #{_debug_frame_count}, vad_buf={len(self.vad_buffer)}B, audio_buf={len(self.audio_buffer)}B, speaking={self.is_speaking}", flush=True)
             await self._process_vad_frame(frame)
 
     async def _process_vad_frame(self, pcm_frame: bytes):
@@ -244,7 +229,7 @@ class PipelineSession:
             if self.speech_start is None:
                 self.speech_start = now
             elif (now - self.speech_start) * 1000 >= MIN_SPEECH_MS * 0.6:
-                logger.info("[Multi] BARGE-IN detected")
+                logger.info("[Hindi] BARGE-IN detected")
                 self._cancel_tts = True
                 self.agent_speaking = False
                 if self._tts_task and not self._tts_task.done():
@@ -266,7 +251,7 @@ class PipelineSession:
                     self.silence_start = None
                     self.audio_buffer = bytearray(self.pre_buffer)
                     await self.send_json({"type": "speech_start"})
-                    logger.info("[Multi] Speech started")
+                    logger.info("[Hindi] Speech started")
 
             if self.is_speaking:
                 self.audio_buffer.extend(pcm_frame)
@@ -293,13 +278,17 @@ class PipelineSession:
         audio_bytes = bytes(self.audio_buffer)
         self.audio_buffer = bytearray()
 
+        duration_s = len(audio_bytes) / (AUDIO_IN_RATE * 2)
+        print(f"[DEBUG-HI] _on_speech_end: audio={len(audio_bytes)}B ({duration_s:.2f}s)", flush=True)
+
         if len(audio_bytes) < AUDIO_IN_RATE * 2 * 0.3:
-            logger.info("[Multi] Speech too short, ignoring")
+            logger.info("[Hindi] Speech too short, ignoring")
+            print(f"[DEBUG-HI] Speech too short ({duration_s:.2f}s < 0.3s), skipping", flush=True)
             await self.send_json({"type": "speech_too_short"})
             return
 
         await self.send_json({"type": "processing"})
-        logger.info(f"[Multi] Speech ended: {len(audio_bytes)} bytes ({len(audio_bytes)/(AUDIO_IN_RATE*2):.1f}s)")
+        logger.info(f"[Hindi] Speech ended: {len(audio_bytes)} bytes ({len(audio_bytes)/(AUDIO_IN_RATE*2):.1f}s)")
 
         t_start = time.time()
         try:
@@ -311,10 +300,10 @@ class PipelineSession:
                 return
 
             await self.send_json({"type": "transcription", "text": transcription})
-            logger.info(f"[Multi] STT ({t_stt - t_start:.1f}s): {transcription}")
+            logger.info(f"[Hindi] STT ({t_stt - t_start:.1f}s): {transcription}")
 
             # -- LLM --
-            logger.info("[Multi] Calling LLM...")
+            logger.info("[Hindi] Calling LLM...")
             response_text = await self._run_llm(transcription)
             t_llm = time.time()
             if not response_text:
@@ -322,7 +311,7 @@ class PipelineSession:
                 return
 
             await self.send_json({"type": "response_text", "text": response_text})
-            logger.info(f"[Multi] LLM ({t_llm - t_stt:.1f}s): {response_text[:80]}...")
+            logger.info(f"[Hindi] LLM ({t_llm - t_stt:.1f}s): {response_text[:80]}...")
 
             # -- TTS --
             self._cancel_tts = False
@@ -333,9 +322,9 @@ class PipelineSession:
             await self._tts_task
 
         except asyncio.CancelledError:
-            logger.info("[Multi] Pipeline cancelled (barge-in)")
+            logger.info("[Hindi] Pipeline cancelled (barge-in)")
         except Exception as e:
-            logger.error(f"[Multi] Pipeline error: {e}\n{traceback.format_exc()}")
+            logger.error(f"[Hindi] Pipeline error: {e}\n{traceback.format_exc()}")
             await self.send_json({"type": "error", "message": str(e)})
         finally:
             self.agent_speaking = False
@@ -345,90 +334,98 @@ class PipelineSession:
     async def _run_stt_voxtral(self, pcm_bytes: bytes) -> str:
         """Send audio to IndicConformer multilingual STT service."""
         audio_b64 = base64.b64encode(pcm_bytes).decode()
+        print(f"[DEBUG-HI] STT request: url={STT_URL}/transcribe, audio_b64_len={len(audio_b64)}, language=hi", flush=True)
         
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.post(
                     f"{STT_URL}/transcribe",
-                    json={"audio": audio_b64, "sample_rate": AUDIO_IN_RATE},
+                    json={"audio": audio_b64, "sample_rate": AUDIO_IN_RATE, "language": "hi"},
                     timeout=aiohttp.ClientTimeout(total=30),
                 ) as resp:
+                    print(f"[DEBUG-HI] STT response status: {resp.status}", flush=True)
                     if resp.status == 200:
                         data = await resp.json()
-                        return (data.get("text") or "").strip()
+                        text = (data.get("text") or "").strip()
+                        print(f"[DEBUG-HI] STT result: '{text}'", flush=True)
+                        return text
                     else:
                         body = await resp.text()
-                        logger.error(f"[Multi] STT error {resp.status}: {body[:200]}")
+                        print(f"[DEBUG-HI] STT error body: {body[:300]}", flush=True)
+                        logger.error(f"[Hindi] STT error {resp.status}: {body[:200]}")
                         return ""
         except Exception as e:
-            logger.error(f"[Multi] STT exception: {e}")
+            print(f"[DEBUG-HI] STT exception: {e}", flush=True)
+            logger.error(f"[Hindi] STT exception: {e}")
             return ""
 
-    # -- LLM via Gemini --
+    # ── LLM via Ollama ─────────────────────────────────────────────
     async def _run_llm(self, user_text: str) -> str:
         self.conversation.append({"role": "user", "content": user_text})
-        cfg = self.lang_cfg
 
+        # Convert conversation history to Ollama format
         messages = []
-        messages.append({"role": "user", "parts": [cfg["system_prompt"]]})
-        messages.append({"role": "model", "parts": [cfg["greeting"]]})
+        messages.append({"role": "system", "content": SYSTEM_PROMPT})
 
-        for msg in self.conversation[-10:]:
-            role = "user" if msg["role"] == "user" else "model"
-            messages.append({"role": role, "parts": [msg["content"]]})
+        for msg in self.conversation[-6:]:
+            role = "user" if msg["role"] == "user" else "assistant"
+            messages.append({"role": role, "content": msg["content"]})
 
-        loop = asyncio.get_event_loop()
+        ollama_url = os.getenv("OLLAMA_URL")
+        print(f"[DEBUG-HI] LLM request: ollama_url={ollama_url}, model=gemma2:2b, msgs={len(messages)}", flush=True)
+        print(f"[DEBUG-HI] LLM user_text: '{user_text}'", flush=True)
 
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                response = await asyncio.wait_for(
-                    loop.run_in_executor(
-                        None,
-                        lambda: gemini_model.generate_content(
-                            messages,
-                            generation_config={"temperature": 0.7, "max_output_tokens": 300},
-                        ),
-                    ),
-                    timeout=30.0,
+        try:
+            import ollama
+            
+            # Use synchronous client in executor to avoid blocking asyncio loop
+            loop = asyncio.get_event_loop()
+            
+            t0 = time.time()
+            response = await loop.run_in_executor(
+                None,
+                lambda: ollama.Client(host=ollama_url).chat(
+                    model="gemma2:2b",
+                    messages=messages,
+                    stream=False
                 )
-                text = response.text.strip()
-                self.conversation.append({"role": "assistant", "content": text})
-                return text
+            )
+            elapsed = time.time() - t0
+            
+            text = response['message']['content'].strip()
+            print(f"[DEBUG-HI] LLM response ({elapsed:.2f}s): '{text[:150]}'", flush=True)
+            self.conversation.append({"role": "assistant", "content": text})
+            return text
 
-            except asyncio.TimeoutError:
-                logger.error("[Multi] LLM call timed out after 30s")
-                return ""
-            except Exception as e:
-                err_str = str(e)
-                if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
-                    wait = 2 ** attempt + 1
-                    logger.warning(f"[Multi] LLM rate-limited, retrying in {wait}s ({attempt+1}/{max_retries})")
-                    await asyncio.sleep(wait)
-                    continue
-                logger.error(f"[Multi] LLM error: {e}\n{traceback.format_exc()}")
-                return ""
-
-        logger.error("[Multi] LLM: all retries exhausted")
-        return ""
+        except Exception as e:
+            print(f"[DEBUG-HI] LLM exception: {e}", flush=True)
+            logger.error(f"[Hindi] LLM error: {e}\n{traceback.format_exc()}")
+            return FALLBACK_RESPONSE
+            
+        if not text:
+             return FALLBACK_RESPONSE
+        return text
 
     # -- TTS (streaming chunks) --
     async def _run_tts_streaming(self, text: str):
         loop = asyncio.get_event_loop()
-        cfg = self.lang_cfg
 
         sentences = self._split_sentences(text)
-        logger.info(f"[Multi] TTS: synthesizing {len(sentences)} sentence(s) [lang={self.language}]")
+        print(f"[DEBUG-HI] TTS: {len(sentences)} sentence(s) to synthesize", flush=True)
+        for i, s in enumerate(sentences):
+            print(f"[DEBUG-HI] TTS sentence {i+1}: '{s[:80]}'", flush=True)
+        logger.info(f"[Hindi] TTS: synthesizing {len(sentences)} sentence(s)")
 
         for idx, sentence in enumerate(sentences):
             if self._cancel_tts:
+                print(f"[DEBUG-HI] TTS cancelled before sentence {idx+1}", flush=True)
                 break
             if not sentence.strip():
                 continue
 
-            logger.info(f"[Multi] TTS: sentence {idx+1}/{len(sentences)}: {sentence[:50]}...")
+            logger.info(f"[Hindi] TTS: sentence {idx+1}/{len(sentences)}: {sentence[:50]}...")
 
-            def _synthesize(s=sentence, desc=cfg["tts_speaker_desc"]):
+            def _synthesize(s=sentence, desc=TTS_SPEAKER_DESC):
                 desc_ids = tts_desc_tokenizer(desc, return_tensors="pt").to("cuda:0")
                 prompt_ids = tts_tokenizer(s, return_tensors="pt").to("cuda:0")
                 gen = tts_model.generate(
@@ -440,21 +437,27 @@ class PipelineSession:
                 return gen.cpu().numpy().squeeze()
 
             try:
+                t0 = time.time()
                 wav = await loop.run_in_executor(tts_executor, _synthesize)
+                tts_elapsed = time.time() - t0
+                print(f"[DEBUG-HI] TTS sentence {idx+1} synthesized in {tts_elapsed:.2f}s", flush=True)
             except Exception as e:
-                logger.error(f"[Multi] TTS error: {e}\n{traceback.format_exc()}")
+                print(f"[DEBUG-HI] TTS exception on sentence {idx+1}: {e}", flush=True)
+                logger.error(f"[Hindi] TTS error: {e}\n{traceback.format_exc()}")
                 continue
 
             if self._cancel_tts:
                 break
 
             if wav is None or len(wav) == 0:
-                logger.warning("[Multi] TTS: empty audio")
+                print(f"[DEBUG-HI] TTS sentence {idx+1}: empty audio!", flush=True)
+                logger.warning("[Hindi] TTS: empty audio")
                 continue
 
             audio = np.array(wav)
             pcm_s16 = (audio * 32767).clip(-32768, 32767).astype(np.int16)
-            logger.info(f"[Multi] TTS: sentence {idx+1} done, {len(pcm_s16)} samples ({len(pcm_s16)/AUDIO_OUT_RATE:.1f}s)")
+            print(f"[DEBUG-HI] TTS sentence {idx+1}: {len(pcm_s16)} samples ({len(pcm_s16)/AUDIO_OUT_RATE:.1f}s audio)", flush=True)
+            logger.info(f"[Hindi] TTS: sentence {idx+1} done, {len(pcm_s16)} samples ({len(pcm_s16)/AUDIO_OUT_RATE:.1f}s)")
 
             chunk_samples = OUT_CHUNK * 4
             for i in range(0, len(pcm_s16), chunk_samples):
@@ -466,7 +469,8 @@ class PipelineSession:
 
         self.agent_speaking = False
         await self.send_json({"type": "tts_done"})
-        logger.info("[Multi] TTS: all done")
+        print(f"[DEBUG-HI] TTS: all done, sent tts_done", flush=True)
+        logger.info("[Hindi] TTS: all done")
 
     @staticmethod
     def _split_sentences(text: str) -> list[str]:
@@ -480,28 +484,42 @@ class PipelineSession:
 #  WebSocket server
 # ==================================================================
 
+# -- Global Session Persistence --
+GLOBAL_SESSIONS = {}  # {client_ip: conversation_history_list}
+
 async def handle_client(ws):
+    # Use remote address (IP) as reliability key
+    client_ip = ws.remote_address[0] if ws.remote_address else "unknown"
+    logger.info(f"[Hindi] New connection from {client_ip}")
+
     session = PipelineSession(ws)
-    await session.run()
+    
+    # Restore history if exists
+    if client_ip in GLOBAL_SESSIONS:
+        logger.info(f"[Hindi] Restoring session for {client_ip} ({len(GLOBAL_SESSIONS[client_ip])} msgs)")
+        session.conversation = GLOBAL_SESSIONS[client_ip]
+    
+    try:
+        await session.run()
+    finally:
+        # Save history on disconnect
+        GLOBAL_SESSIONS[client_ip] = session.conversation
+        logger.info(f"[Hindi] Saved session for {client_ip}")
 
 
 async def main():
     logger.info("=" * 60)
-    logger.info("  Multi-language Pipeline Server (English + Hindi)")
+    logger.info("  Hindi-Only Pipeline Server")
     logger.info("=" * 60)
-
-    if not GEMINI_API_KEY:
-        logger.error("GEMINI_API_KEY not set!")
-        sys.exit(1)
 
     load_models()
 
     logger.info("")
     logger.info(f"  WebSocket server: ws://{WS_HOST}:{WS_PORT}")
     logger.info(f"  STT service:      {STT_URL}")
-    logger.info(f"  Gemini model:     {GEMINI_MODEL}")
+    logger.info(f"  LLM model:        gemma2:2b (TTS-friendly)")
     logger.info(f"  TTS voice:        Indic Parler-TTS")
-    logger.info(f"  Languages:        English, Hindi")
+    logger.info(f"  Language:         Hindi only")
     logger.info("")
     logger.info("  Waiting for browser connections ...")
     logger.info("=" * 60)
@@ -511,8 +529,8 @@ async def main():
         WS_HOST,
         WS_PORT,
         max_size=10 * 1024 * 1024,
-        ping_interval=30,
-        ping_timeout=10,
+        ping_interval=None,
+        ping_timeout=None,
     ):
         await asyncio.Future()
 

@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <title>WebSocket Test</title>
+</head>
+
+<body>
+    <h1>WebSocket Connection Test</h1>
+    <div id="status">Testing...</div>
+    <div id="log"></div>
+
+    <script>
+        const log = document.getElementById('log');
+        const status = document.getElementById('status');
+
+        function addLog(msg) {
+            const p = document.createElement('p');
+            p.textContent = new Date().toLocaleTimeString() + ': ' + msg;
+            log.appendChild(p);
+            console.log(msg);
+        }
+
+        // Test English pipeline
+        addLog('Attempting to connect to ws://localhost:8767');
+        const ws = new WebSocket('ws://localhost:8767');
+
+        ws.onopen = () => {
+            addLog('✅ Connected successfully!');
+            status.textContent = '✅ Connection successful';
+            status.style.color = 'green';
+        };
+
+        ws.onerror = (error) => {
+            addLog('❌ Connection error: ' + error);
+            status.textContent = '❌ Connection failed';
+            status.style.color = 'red';
+        };
+
+        ws.onclose = (event) => {
+            addLog(`Connection closed: code=${event.code}, reason=${event.reason}`);
+        };
+
+        ws.onmessage = (event) => {
+            addLog('Received: ' + event.data);
+        };
+    </script>
+</body>
+
+</html>
