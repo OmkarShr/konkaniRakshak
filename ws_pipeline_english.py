@@ -47,7 +47,7 @@ WHISPER_MODEL = "medium"  # medium model for good accuracy/performance balance
 WHISPER_DEVICE = "cuda"  # Will use cuda:1 (GPU 1) explicitly
 WHISPER_COMPUTE_TYPE = "float16"  # GPU optimization
 WHISPER_GPU_INDEX = 1  # Physical GPU 1 for STT
-TTS_GPU_INDEX = 0  # Physical GPU 0 for TTS
+TTS_GPU_INDEX = 1  # Physical GPU 1 for TTS (co-located with Whisper, they run sequentially)
 
 
 AUDIO_IN_RATE = 16000       # from browser mic
