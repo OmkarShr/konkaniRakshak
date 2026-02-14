@@ -30,6 +30,7 @@ import numpy as np
 import aiohttp
 import websockets
 from loguru import logger
+from faster_whisper import WhisperModel
 
 # -- Logging --
 logger.remove()
@@ -42,7 +43,9 @@ logger.add(
 # -- Configuration --
 WS_HOST = "0.0.0.0"
 WS_PORT = int(os.getenv("WS_PORT", "8767"))
-STT_URL = os.getenv("MULTILINGUAL_STT_URL", "http://multilingual-stt:50052")
+WHISPER_MODEL = "medium"  # medium model for good accuracy/performance balance
+WHISPER_DEVICE = "cuda"  # GPU 1 via CUDA_VISIBLE_DEVICES
+WHISPER_COMPUTE_TYPE = "float16"  # GPU optimization
 
 
 AUDIO_IN_RATE = 16000       # from browser mic
@@ -80,13 +83,15 @@ vad_model = None
 tts_model = None
 tts_tokenizer = None
 tts_desc_tokenizer = None
+stt_model = None
 
 tts_executor = ThreadPoolExecutor(max_workers=1)
+stt_executor = ThreadPoolExecutor(max_workers=1)
 
 
 def load_models():
     """Load all heavy models once at process start."""
-    global vad_model, tts_model, tts_tokenizer, tts_desc_tokenizer
+    global vad_model, tts_model, tts_tokenizer, tts_desc_tokenizer, stt_model
 
     # -- 1. Silero VAD --
     import torch
@@ -96,7 +101,16 @@ def load_models():
     )
     logger.info("  VAD loaded")
 
-    # -- 2. Indic Parler-TTS --
+    # -- 2. Faster-Whisper STT --
+    logger.info(f"Loading Faster-Whisper ({WHISPER_MODEL}) on {WHISPER_DEVICE} ...")
+    stt_model = WhisperModel(
+        WHISPER_MODEL,
+        device=WHISPER_DEVICE,
+        compute_type=WHISPER_COMPUTE_TYPE
+    )
+    logger.info("  Whisper STT loaded")
+
+    # -- 3. Indic Parler-TTS --
     logger.info("Loading Indic Parler-TTS (GPU) ...")
     from parler_tts import ParlerTTSForConditionalGeneration
     from transformers import AutoTokenizer
@@ -282,8 +296,8 @@ class PipelineSession:
 
         t_start = time.time()
         try:
-            # -- STT via Voxtral (vLLM transcription API) --
-            transcription = await self._run_stt_voxtral(audio_bytes)
+            # -- STT (local Faster-Whisper) --
+            transcription = await self._run_stt_whisper(audio_bytes)
             t_stt = time.time()
             if not transcription:
                 await self.send_json({"type": "stt_empty"})
@@ -320,27 +334,29 @@ class PipelineSession:
             self.agent_speaking = False
             await self.send_json({"type": "turn_done"})
 
-    # -- STT via IndicConformer Multilingual (HTTP API) --
-    async def _run_stt_voxtral(self, pcm_bytes: bytes) -> str:
-        """Send audio to IndicConformer multilingual STT service."""
-        audio_b64 = base64.b64encode(pcm_bytes).decode()
+    # -- STT via Faster-Whisper (Local) --
+    async def _run_stt_whisper(self, pcm_bytes: bytes) -> str:
+        """Run speech-to-text using local Faster-Whisper model."""
+        loop = asyncio.get_event_loop()
+        
+        # Convert PCM bytes to float32 numpy array
+        audio_np = np.frombuffer(pcm_bytes, dtype=np.int16).astype(np.float32) / 32768.0
+        
+        def _transcribe():
+            segments, info = stt_model.transcribe(
+                audio_np,
+                beam_size=5,
+                language="en",
+                task="transcribe"
+            )
+            # Consume generator to get text
+            text_segments = [s.text for s in segments]
+            return " ".join(text_segments).strip()
         
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{STT_URL}/transcribe",
-                    json={"audio": audio_b64, "sample_rate": AUDIO_IN_RATE, "language": "en"},
-                    timeout=aiohttp.ClientTimeout(total=30),
-                ) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        return (data.get("text") or "").strip()
-                    else:
-                        body = await resp.text()
-                        logger.error(f"[English] STT error {resp.status}: {body[:200]}")
-                        return ""
+            return await loop.run_in_executor(stt_executor, _transcribe)
         except Exception as e:
-            logger.error(f"[English] STT exception: {e}")
+            logger.error(f"[English] STT error: {e}\n{traceback.format_exc()}")
             return ""
 
     # ── LLM via Ollama ─────────────────────────────────────────────
@@ -481,7 +497,7 @@ async def main():
 
     logger.info("")
     logger.info(f"  WebSocket server: ws://{WS_HOST}:{WS_PORT}")
-    logger.info(f"  STT service:      {STT_URL}")
+    logger.info(f"  STT model:        Faster-Whisper ({WHISPER_MODEL}) on GPU 1")
     logger.info(f"  LLM model:        gemma2:2b (TTS-friendly)")
     logger.info(f"  TTS voice:        Indic Parler-TTS")
     logger.info(f"  Language:         English only")

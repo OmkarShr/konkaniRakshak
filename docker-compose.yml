@@ -167,9 +167,8 @@ services:
     container_name: konkani-pipeline-english
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
-      - CUDA_VISIBLE_DEVICES=0
+      - CUDA_VISIBLE_DEVICES=1
       - HF_TOKEN=${HF_TOKEN}
-      - MULTILINGUAL_STT_URL=http://multilingual-stt:50052
       - WS_PORT=8767
       - OLLAMA_URL=http://ollama:11434
     volumes:
@@ -179,8 +178,6 @@ services:
     networks:
       - konkani-network
     depends_on:
-      multilingual-stt:
-        condition: service_healthy
       ollama:
         condition: service_started
     stdin_open: true

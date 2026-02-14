@@ -58,7 +58,8 @@ RUN pip install \
     websockets \
     google-generativeai \
     pipecat-ai==0.0.49 \
-    ollama
+    ollama \
+    faster-whisper
 
 # Install Parler-TTS from source
 RUN pip install git+https://github.com/huggingface/parler-tts.git
@@ -73,9 +74,9 @@ WORKDIR /app
 COPY src/ /app/src/
 COPY config/ /app/config/
 COPY services/ /app/services/
-COPY ws_pipeline.py /app/
-COPY start_pipeline.sh /app/
-COPY ws_pipeline_multi.py /app/
+COPY archive/legacy_scripts/ws_pipeline.py /app/
+COPY archive/legacy_scripts/start_pipeline.sh /app/
+COPY archive/legacy_scripts/ws_pipeline_multi.py /app/
 COPY ws_pipeline_english.py /app/
 COPY ws_pipeline_hindi.py /app/
 COPY start_pipeline_english.sh /app/
