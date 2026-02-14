@@ -44,8 +44,10 @@ logger.add(
 WS_HOST = "0.0.0.0"
 WS_PORT = int(os.getenv("WS_PORT", "8767"))
 WHISPER_MODEL = "medium"  # medium model for good accuracy/performance balance
-WHISPER_DEVICE = "cuda"  # GPU 1 via CUDA_VISIBLE_DEVICES
+WHISPER_DEVICE = "cuda"  # Will use cuda:1 (GPU 1) explicitly
 WHISPER_COMPUTE_TYPE = "float16"  # GPU optimization
+WHISPER_GPU_INDEX = 1  # Physical GPU 1 for STT
+TTS_GPU_INDEX = 0  # Physical GPU 0 for TTS
 
 
 AUDIO_IN_RATE = 16000       # from browser mic
@@ -102,30 +104,31 @@ def load_models():
     logger.info("  VAD loaded")
 
     # -- 2. Faster-Whisper STT --
-    logger.info(f"Loading Faster-Whisper ({WHISPER_MODEL}) on {WHISPER_DEVICE} ...")
+    logger.info(f"Loading Faster-Whisper ({WHISPER_MODEL}) on cuda:{WHISPER_GPU_INDEX} ...")
     stt_model = WhisperModel(
         WHISPER_MODEL,
         device=WHISPER_DEVICE,
+        device_index=WHISPER_GPU_INDEX,
         compute_type=WHISPER_COMPUTE_TYPE
     )
     logger.info("  Whisper STT loaded")
 
     # -- 3. Indic Parler-TTS --
-    logger.info("Loading Indic Parler-TTS (GPU) ...")
+    logger.info(f"Loading Indic Parler-TTS on cuda:{TTS_GPU_INDEX} ...")
     from parler_tts import ParlerTTSForConditionalGeneration
     from transformers import AutoTokenizer
 
     tts_model = ParlerTTSForConditionalGeneration.from_pretrained(
         "ai4bharat/indic-parler-tts"
-    ).to("cuda:0")
+    ).to(f"cuda:{TTS_GPU_INDEX}")
     tts_tokenizer = AutoTokenizer.from_pretrained("ai4bharat/indic-parler-tts")
     tts_desc_tokenizer = AutoTokenizer.from_pretrained(
         tts_model.config.text_encoder._name_or_path
     )
     # Warmup
     logger.info("  Warming up TTS ...")
-    _warmup_desc = tts_desc_tokenizer("Sanjay speaks clearly.", return_tensors="pt").to("cuda:0")
-    _warmup_text = tts_tokenizer("Hello", return_tensors="pt").to("cuda:0")
+    _warmup_desc = tts_desc_tokenizer("Sanjay speaks clearly.", return_tensors="pt").to(f"cuda:{TTS_GPU_INDEX}")
+    _warmup_text = tts_tokenizer("Hello", return_tensors="pt").to(f"cuda:{TTS_GPU_INDEX}")
     _ = tts_model.generate(
         input_ids=_warmup_desc.input_ids,
         attention_mask=_warmup_desc.attention_mask,
@@ -414,8 +417,8 @@ class PipelineSession:
             logger.info(f"[English] TTS: sentence {idx+1}/{len(sentences)}: {sentence[:50]}...")
 
             def _synthesize(s=sentence, desc=TTS_SPEAKER_DESC):
-                desc_ids = tts_desc_tokenizer(desc, return_tensors="pt").to("cuda:0")
-                prompt_ids = tts_tokenizer(s, return_tensors="pt").to("cuda:0")
+                desc_ids = tts_desc_tokenizer(desc, return_tensors="pt").to(f"cuda:{TTS_GPU_INDEX}")
+                prompt_ids = tts_tokenizer(s, return_tensors="pt").to(f"cuda:{TTS_GPU_INDEX}")
                 gen = tts_model.generate(
                     input_ids=desc_ids.input_ids,
                     attention_mask=desc_ids.attention_mask,

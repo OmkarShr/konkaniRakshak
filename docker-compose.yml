@@ -167,7 +167,7 @@ services:
     container_name: konkani-pipeline-english
     environment:
       - NVIDIA_VISIBLE_DEVICES=all
-      - CUDA_VISIBLE_DEVICES=1
+      - CUDA_VISIBLE_DEVICES=0,1
       - HF_TOKEN=${HF_TOKEN}
       - WS_PORT=8767
       - OLLAMA_URL=http://ollama:11434
