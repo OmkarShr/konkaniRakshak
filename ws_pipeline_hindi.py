@@ -64,11 +64,9 @@ FALLBACK_RESPONSE = "Sorry, I am having trouble connecting to my brain right now
 
 # Hindi-only configuration with TTS-friendly prompt
 SYSTEM_PROMPT = (
-    "आप गोवा पुलिस के लिए एफआईआर (प्रथम सूचना रिपोर्ट) दर्ज करने में सहायता करने वाले सहायक हैं। "
-    "हमेशा हिंदी में जवाब दें। जवाब छोटे और स्पष्ट रखें। "
-    "आवश्यक विवरण पूछें: शिकायतकर्ता का नाम, घटना का विवरण, तारीख, समय, स्थान। "
-    "\n\nमहत्वपूर्ण: अपने उत्तरों में विशेष चिह्नों या प्रतीकों का उपयोग न करें जो टेक्स्ट-टू-स्पीच को भ्रमित कर सकते हैं। "
-    "उद्धरण चिह्न, तारक चिह्न और अन्य प्रतीकों से बचें। स्वाभाविक हिंदी में स्पष्ट रूप से लिखें।"
+    "आप गोवा पुलिस के लिए एफआईआर दर्ज करने में सहायता करने वाले सहायक हैं। हमेशा हिंदी में जवाब दें।"
+    " जवाब छोटे रखें। संख्याओं (1, 2, 3) का प्रयोग न करें, उन्हें शब्दों में लिखें (जैसे 'एक', 'बीस')।"
+    " विशेष चिह्नों (', *, #) का प्रयोग न करें। स्पष्ट हिंदी लिखें।"
 )
 
 TTS_SPEAKER_DESC = "Sanjay speaks with a moderate pace and a clear, close-sounding recording with no background noise."
@@ -426,8 +424,13 @@ class PipelineSession:
             logger.info(f"[Hindi] TTS: sentence {idx+1}/{len(sentences)}: {sentence[:50]}...")
 
             def _synthesize(s=sentence, desc=TTS_SPEAKER_DESC):
+                # Sanitize
+                s_clean = PipelineSession._sanitize_text(s)
+                if not s_clean.strip():
+                    return np.array([])
+                
                 desc_ids = tts_desc_tokenizer(desc, return_tensors="pt").to("cuda:0")
-                prompt_ids = tts_tokenizer(s, return_tensors="pt").to("cuda:0")
+                prompt_ids = tts_tokenizer(s_clean, return_tensors="pt").to("cuda:0")
                 gen = tts_model.generate(
                     input_ids=desc_ids.input_ids,
                     attention_mask=desc_ids.attention_mask,
@@ -449,8 +452,8 @@ class PipelineSession:
             if self._cancel_tts:
                 break
 
-            if wav is None or len(wav) == 0:
-                print(f"[DEBUG-HI] TTS sentence {idx+1}: empty audio!", flush=True)
+            if wav is None or wav.ndim == 0 or wav.size == 0:
+                print(f"[DEBUG-HI] TTS sentence {idx+1}: empty/invalid audio!", flush=True)
                 logger.warning("[Hindi] TTS: empty audio")
                 continue
 
@@ -471,6 +474,17 @@ class PipelineSession:
         await self.send_json({"type": "tts_done"})
         print(f"[DEBUG-HI] TTS: all done, sent tts_done", flush=True)
         logger.info("[Hindi] TTS: all done")
+
+    @staticmethod
+    def _sanitize_text(text: str) -> str:
+        """Sanitize Hindi text: remove special chars, keep Devanagari & punctuation."""
+        import re
+        # Remove chars that aren't Devanagari, basic punctuation, or spaces
+        # block ranges: \u0900-\u097F (Devanagari), \s (space), .,?!-| (punctuation)
+        # text = re.sub(r'[^\u0900-\u097F\s.,?!-|]', '', text) 
+        # Actually simplest is to just remove specific bad chars like * # @ 
+        text = text.replace("*", "").replace("#", "").replace("@", "").replace("'", "").replace('"', "")
+        return text
 
     @staticmethod
     def _split_sentences(text: str) -> list[str]:

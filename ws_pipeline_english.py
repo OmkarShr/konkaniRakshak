@@ -69,12 +69,10 @@ FALLBACK_RESPONSE = "Sorry, I am having trouble connecting to my brain right now
 
 # English-only configuration with TTS-friendly prompt
 SYSTEM_PROMPT = (
-    "You are an assistant for the Goa Police to help file FIRs (First Information Reports). "
-    "Always respond in English. Keep responses short and clear. "
-    "Ask for necessary details: complainant name, incident description, date, time, location. "
-    "\n\nIMPORTANT: Do not use apostrophes or special symbols in your responses. "
-    "Write words out fully instead of using contractions. For example, use 'cannot' instead of 'can't', "
-    "'do not' instead of 'don't'. Avoid quotation marks, asterisks, and other symbols that may confuse text-to-speech."
+    "You are an assistant for the Goa Police to help file FIRs. Keep responses short."
+    " Do NOT use apostrophes, special characters, or numbers."
+    " Write numbers as words (e.g. 'twenty' instead of '20')."
+    " Write 'do not' instead of 'don't'."
 )
 
 TTS_SPEAKER_DESC = "Sanjay speaks with a moderate pace and a clear, close-sounding recording with no background noise."
@@ -368,6 +366,12 @@ class PipelineSession:
 
         # Convert conversation history to Ollama format
         messages = []
+        SYSTEM_PROMPT = (
+    "You are an assistant for the Goa Police to help file FIRs. Keep responses short."
+    " Do NOT use apostrophes, special characters, or numbers."
+    " Write numbers as words (e.g. 'twenty' instead of '20')."
+    " Write 'do not' instead of 'don't'."
+)
         messages.append({"role": "system", "content": SYSTEM_PROMPT})
 
         for msg in self.conversation[-6:]:
@@ -408,53 +412,99 @@ class PipelineSession:
         sentences = self._split_sentences(text)
         logger.info(f"[English] TTS: synthesizing {len(sentences)} sentence(s)")
 
-        for idx, sentence in enumerate(sentences):
-            if self._cancel_tts:
-                break
-            if not sentence.strip():
-                continue
+        # Create a queue for synthesized audio chunks
+        audio_queue = asyncio.Queue()
+        sentinel = object() # signal end of queue
 
-            logger.info(f"[English] TTS: sentence {idx+1}/{len(sentences)}: {sentence[:50]}...")
-
-            def _synthesize(s=sentence, desc=TTS_SPEAKER_DESC):
-                desc_ids = tts_desc_tokenizer(desc, return_tensors="pt").to(f"cuda:{TTS_GPU_INDEX}")
-                prompt_ids = tts_tokenizer(s, return_tensors="pt").to(f"cuda:{TTS_GPU_INDEX}")
-                gen = tts_model.generate(
-                    input_ids=desc_ids.input_ids,
-                    attention_mask=desc_ids.attention_mask,
-                    prompt_input_ids=prompt_ids.input_ids,
-                    prompt_attention_mask=prompt_ids.attention_mask,
-                )
-                return gen.cpu().numpy().squeeze()
-
-            try:
-                wav = await loop.run_in_executor(tts_executor, _synthesize)
-            except Exception as e:
-                logger.error(f"[English] TTS error: {e}\n{traceback.format_exc()}")
-                continue
-
-            if self._cancel_tts:
-                break
-
-            if wav is None or len(wav) == 0:
-                logger.warning("[English] TTS: empty audio")
-                continue
-
-            audio = np.array(wav)
-            pcm_s16 = (audio * 32767).clip(-32768, 32767).astype(np.int16)
-            logger.info(f"[English] TTS: sentence {idx+1} done, {len(pcm_s16)} samples ({len(pcm_s16)/AUDIO_OUT_RATE:.1f}s)")
-
-            chunk_samples = OUT_CHUNK * 4
-            for i in range(0, len(pcm_s16), chunk_samples):
+        # Producer: Synthesize sentences and put them in the queue and runs on GPU 1
+        async def producer():
+            for idx, sentence in enumerate(sentences):
                 if self._cancel_tts:
                     break
-                chunk = pcm_s16[i : i + chunk_samples].tobytes()
-                await self.send_audio(chunk)
-                await asyncio.sleep(len(chunk) / (2 * AUDIO_OUT_RATE) * 0.8)
+                if not sentence.strip():
+                    continue
+
+                logger.info(f"[English] TTS: sentence {idx+1}/{len(sentences)}: {sentence[:50]}...")
+
+                def _synthesize(s=sentence, desc=TTS_SPEAKER_DESC):
+                    # Sanitize before TTS
+                    s_clean = PipelineSession._sanitize_text(s)
+                    if not s_clean.strip(): 
+                        return np.array([])
+
+                    desc_ids = tts_desc_tokenizer(desc, return_tensors="pt").to(f"cuda:{TTS_GPU_INDEX}")
+                    prompt_ids = tts_tokenizer(s_clean, return_tensors="pt").to(f"cuda:{TTS_GPU_INDEX}")
+                    gen = tts_model.generate(
+                        input_ids=desc_ids.input_ids,
+                        attention_mask=desc_ids.attention_mask,
+                        prompt_input_ids=prompt_ids.input_ids,
+                        prompt_attention_mask=prompt_ids.attention_mask,
+                    )
+                    return gen.cpu().numpy().squeeze()
+
+                try:
+                    wav = await loop.run_in_executor(tts_executor, _synthesize)
+                    if wav is not None and wav.ndim > 0 and wav.size > 0:
+                        await audio_queue.put((idx, wav))
+                    else:
+                         logger.warning(f"[English] TTS produced empty/invalid audio for sentence: {sentence}")
+                except Exception as e:
+                    logger.error(f"[English] TTS error: {e}\n{traceback.format_exc()}")
+                    continue
+
+            await audio_queue.put(sentinel)
+
+        # Consumer: Get audio from queue and send it (simulate playback)
+        async def consumer():
+            while True:
+                if self._cancel_tts:
+                    break
+                
+                item = await audio_queue.get()
+                if item is sentinel:
+                    audio_queue.task_done()
+                    break
+
+                idx, wav = item
+                audio = np.array(wav)
+                pcm_s16 = (audio * 32767).clip(-32768, 32767).astype(np.int16)
+                logger.info(f"[English] TTS: sentence {idx+1} done, {len(pcm_s16)} samples ({len(pcm_s16)/AUDIO_OUT_RATE:.1f}s)")
+
+                chunk_samples = OUT_CHUNK * 4
+                for i in range(0, len(pcm_s16), chunk_samples):
+                    if self._cancel_tts:
+                        break
+                    chunk = pcm_s16[i : i + chunk_samples].tobytes()
+                    await self.send_audio(chunk)
+                    # Simulate realtime playback delay to avoid sending too fast
+                    await asyncio.sleep(len(chunk) / (2 * AUDIO_OUT_RATE) * 0.8)
+                
+                audio_queue.task_done()
+
+        # Run producer and consumer concurrently
+        producer_task = asyncio.create_task(producer())
+        consumer_task = asyncio.create_task(consumer())
+
+        await asyncio.gather(producer_task, consumer_task)
 
         self.agent_speaking = False
         await self.send_json({"type": "tts_done"})
         logger.info("[English] TTS: all done")
+
+    @staticmethod
+    def _sanitize_text(text: str) -> str:
+        """
+        Sanitize text for Indic TTS:
+        1. Remove apostrophes (don't -> dont)
+        2. Remove special chars (keep only alphanumeric, spaces, basic punctuation)
+        3. Convert digits to words (optional, but LLM should handle it)
+        """
+        import re
+        # Remove apostrophes
+        text = text.replace("'", "").replace("’", "")
+        # Remove other special chars common in LLM output (*, #, etc)
+        text = re.sub(r'[^\w\s.,?!-]', '', text)
+        return text
 
     @staticmethod
     def _split_sentences(text: str) -> list[str]:
