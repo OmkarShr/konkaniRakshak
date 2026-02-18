@@ -83,10 +83,6 @@
       color: #fff;
     }
 
-    .tab-btn.active.kok {
-      border-bottom: 2px solid #f5a623;
-    }
-
     .tab-btn.active.en {
       border-bottom: 2px solid #51cf66;
     }
@@ -353,8 +349,7 @@
     <p class="subtitle">Multi-language Voice Agent -- Real-time Conversational AI</p>
 
     <div class="tabs">
-      <button class="tab-btn kok active" data-lang="kok" onclick="switchTab('kok')">Konkani</button>
-      <button class="tab-btn en" data-lang="en" onclick="switchTab('en')">English</button>
+      <button class="tab-btn en active" data-lang="en" onclick="switchTab('en')">English</button>
       <button class="tab-btn hi" data-lang="hi" onclick="switchTab('hi')">Hindi</button>
     </div>
 
@@ -364,7 +359,7 @@
     </div>
 
     <div class="lang-indicator">
-      Active: <span id="langBadge">Konkani</span>
+      Active: <span id="langBadge">English</span>
     </div>
 
     <div class="mic-area">
@@ -381,9 +376,9 @@
 
   <script>
     // ========== Configuration ==========
-    const KONKANI_WS_PORT = 8765;   // Konkani pipeline
-    const ENGLISH_WS_PORT = 8767;   // English-only pipeline
-    const HINDI_WS_PORT = 8768;   // Hindi-only pipeline
+    const WS_PROTOCOL = location.protocol === 'https:' ? 'wss' : 'ws';
+    const ENGLISH_WS_PATH = '/ws/en';
+    const HINDI_WS_PATH = '/ws/hi';
 
     const SAMPLE_RATE_IN = 16000;
     const SAMPLE_RATE_OUT = 44100;
@@ -392,9 +387,8 @@
 
     // ========== Per-tab state ==========
     const TABS = {
-      kok: { label: 'Konkani', port: KONKANI_WS_PORT, ws: null, convo: [], isActive: false, reconnTimer: null },
-      en: { label: 'English', port: ENGLISH_WS_PORT, ws: null, convo: [], isActive: false, reconnTimer: null },
-      hi: { label: 'Hindi', port: HINDI_WS_PORT, ws: null, convo: [], isActive: false, reconnTimer: null },
+      en: { label: 'English', wsPath: ENGLISH_WS_PATH, ws: null, convo: [], isActive: false, reconnTimer: null },
+      hi: { label: 'Hindi', wsPath: HINDI_WS_PATH, ws: null, convo: [], isActive: false, reconnTimer: null },
     };
 
     let currentLang = 'en';
@@ -450,7 +444,7 @@
       const tab = TABS[lang];
       if (tab.ws && (tab.ws.readyState === 0 || tab.ws.readyState === 1)) return;
 
-      const wsUrl = `ws://${location.hostname}:${tab.port}`;
+      const wsUrl = `${WS_PROTOCOL}://${location.host}${tab.wsPath}`;
       tab.ws = new WebSocket(wsUrl);
       tab.ws.binaryType = 'arraybuffer';
 
@@ -546,6 +540,12 @@
       const tab = TABS[currentLang];
       if (!tab.ws || tab.ws.readyState !== 1) return;
 
+      if (!window.isSecureContext) {
+        setStatus('disconnected', 'Mic needs HTTPS (or localhost)');
+        micLabel.textContent = 'Open this site over HTTPS';
+        return;
+      }
+
       try {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: SAMPLE_RATE_IN });
         micStream = await navigator.mediaDevices.getUserMedia({
@@ -589,7 +589,16 @@
 
       } catch (err) {
         console.error('Mic error:', err);
-        setStatus('disconnected', 'Mic permission denied');
+        if (err && err.name === 'NotAllowedError') {
+          setStatus('disconnected', 'Mic blocked: allow browser permission');
+          micLabel.textContent = 'Allow microphone and retry';
+        } else if (err && err.name === 'NotFoundError') {
+          setStatus('disconnected', 'No microphone detected');
+          micLabel.textContent = 'Connect a microphone';
+        } else {
+          setStatus('disconnected', 'Mic unavailable on this page');
+          micLabel.textContent = 'Use HTTPS (or localhost)';
+        }
       }
     }
 
@@ -702,8 +711,8 @@
       renderConvo();
     }
 
-    // ========== Init: connect to Konkani pipeline on load ==========
-    connectTab('kok');
+    // ========== Init: connect to default tab only ==========
+    connectTab('en');
   </script>
 </body>
 

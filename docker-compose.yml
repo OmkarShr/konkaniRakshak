@@ -1,164 +1,32 @@
 services:
-  # STT Service - NeMo with all its dependencies
-  stt-service:
-    build:
-      context: .
-      dockerfile: Dockerfile.stt
-    image: konkani-stt-service:latest
-    container_name: konkani-stt-service
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=all
-      - CUDA_VISIBLE_DEVICES=0
-      - STT_HOST=0.0.0.0
-      - STT_PORT=50051
-      - STT_DEVICE=cuda
-      - STT_LANGUAGE=kok
-      - STT_MODEL_PATH=/app/models/indicconformer_stt_kok_hybrid_rnnt_large.nemo
+  reverse-proxy:
+    image: nginx:1.27-alpine
+    container_name: konkani-reverse-proxy
     ports:
-      - "50051:50051"
+      - "7777:7777"
     volumes:
-      - ./models:/app/models:ro
-      - ./logs:/app/logs
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./web_ui:/usr/share/nginx/html:ro
+    depends_on:
+      pipeline-english:
+        condition: service_started
+      pipeline-hindi:
+        condition: service_started
     networks:
       - konkani-network
     restart: unless-stopped
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [ gpu ]
-    healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:50051/health" ]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 120s
 
-  # Multilingual STT Service - For Hindi/English/Other Languages
-  multilingual-stt:
-    build:
-      context: .
-      dockerfile: Dockerfile.stt
-    image: multilingual-stt-service:latest
-    container_name: multilingual-stt-service
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=all
-      - CUDA_VISIBLE_DEVICES=0
-      - STT_HOST=0.0.0.0
-      - STT_PORT=50052
-      - STT_DEVICE=cuda
-      - STT_LANGUAGE=hi
-      - STT_MODEL_PATH=/app/models/indicconformer_stt_multi_hybrid_rnnt_600m.nemo
-    ports:
-      - "50052:50052"
-    volumes:
-      - ./models:/app/models:ro
-      - ./logs:/app/logs
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: konkani-cloudflared
+    command: ["tunnel", "--no-autoupdate", "--url", "http://reverse-proxy:7777"]
+    depends_on:
+      reverse-proxy:
+        condition: service_started
     networks:
       - konkani-network
     restart: unless-stopped
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [ gpu ]
-    healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:50052/health" ]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 180s
 
-  # Main Pipeline - Pipecat with clean dependencies
-  pipeline:
-    build:
-      context: .
-      dockerfile: Dockerfile.pipeline
-    image: konkani-pipeline:latest
-    container_name: konkani-pipeline
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=all
-      - CUDA_VISIBLE_DEVICES=0
-      # - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - HF_TOKEN=${HF_TOKEN}
-      - STT_SERVICE_URL=http://stt-service:50051
-      - DISPLAY=${DISPLAY}
-      - PULSE_SERVER=unix:/tmp/pulseaudio.socket
-      - PULSE_COOKIE=/tmp/pulseaudio.cookie
-      - MULTILINGUAL_STT_URL=http://multilingual-stt:50052
-      - OLLAMA_URL=http://ollama:11434
-    volumes:
-      - .:/app:ro
-      - ./logs:/app/logs
-      - /tmp/pulseaudio.socket:/tmp/pulseaudio.socket
-      - /tmp/pulseaudio.cookie:/tmp/pulseaudio.cookie
-      - ~/.cache/huggingface:/root/.cache/huggingface
-    networks:
-      - konkani-network
-    depends_on:
-      stt-service:
-        condition: service_healthy
-      ollama:
-        condition: service_started
-    stdin_open: true
-    tty: true
-    privileged: true
-    devices:
-      - /dev/snd:/dev/snd
-    ports:
-      - "8765:8765"
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [ gpu ]
-
-  # Multilingual Pipeline - Hindi/English (uses ws_pipeline_multi.py)
-  pipeline-multi:
-    build:
-      context: .
-      dockerfile: Dockerfile.pipeline
-    image: konkani-pipeline-multi:latest
-    container_name: konkani-pipeline-multi
-    environment:
-      - NVIDIA_VISIBLE_DEVICES=all
-      - CUDA_VISIBLE_DEVICES=0
-      # - GEMINI_API_KEY=${GEMINI_API_KEY}
-      - HF_TOKEN=${HF_TOKEN}
-      - MULTILINGUAL_STT_URL=http://multilingual-stt:50052
-      - WS_PORT=8766
-      - OLLAMA_URL=http://ollama:11434
-    volumes:
-      - .:/app:ro
-      - ./logs:/app/logs
-      - ~/.cache/huggingface:/root/.cache/huggingface
-    networks:
-      - konkani-network
-    depends_on:
-      multilingual-stt:
-        condition: service_healthy
-      ollama:
-        condition: service_started
-    stdin_open: true
-    tty: true
-    ports:
-      - "8766:8766"
-    command: [ "python", "/app/ws_pipeline_multi.py" ]
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [ gpu ]
-
-  # English-Only Pipeline
   pipeline-english:
     build:
       context: .
@@ -182,18 +50,18 @@ services:
         condition: service_started
     stdin_open: true
     tty: true
-    ports:
-      - "8767:8767"
-    command: [ "bash", "/app/start_pipeline_english.sh" ]
+    expose:
+      - "8767"
+    command: ["bash", "/app/start_pipeline_english.sh"]
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
               count: all
-              capabilities: [ gpu ]
+              capabilities: [gpu]
+    restart: unless-stopped
 
-  # Hindi-Only Pipeline
   pipeline-hindi:
     build:
       context: .
@@ -204,8 +72,175 @@ services:
       - NVIDIA_VISIBLE_DEVICES=all
       - CUDA_VISIBLE_DEVICES=0
       - HF_TOKEN=${HF_TOKEN}
-      - MULTILINGUAL_STT_URL=http://multilingual-stt:50052
       - WS_PORT=8768
+      - OLLAMA_URL=http://ollama:11434
+      - WHISPER_MODEL=small
+      - WHISPER_COMPUTE_TYPE=int8_float16
+      - WHISPER_GPU_INDEX=0
+      - TTS_GPU_INDEX=0
+    volumes:
+      - .:/app:ro
+      - ./logs:/app/logs
+      - ~/.cache/huggingface:/root/.cache/huggingface
+    networks:
+      - konkani-network
+    depends_on:
+      ollama:
+        condition: service_started
+    stdin_open: true
+    tty: true
+    expose:
+      - "8768"
+    command: ["bash", "/app/start_pipeline_hindi.sh"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: konkani-ollama
+    environment:
+      - OLLAMA_KEEP_ALIVE=24h
+      - OLLAMA_NUM_CTX=8192
+    volumes:
+      - ./ollama_data:/root/.ollama
+    expose:
+      - "11434"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              device_ids: ['1']
+              capabilities: [gpu]
+    networks:
+      - konkani-network
+    restart: unless-stopped
+
+  stt-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.stt
+    image: konkani-stt-service:latest
+    container_name: konkani-stt-service
+    profiles: ["legacy"]
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - CUDA_VISIBLE_DEVICES=0
+      - STT_HOST=0.0.0.0
+      - STT_PORT=50051
+      - STT_DEVICE=cuda
+      - STT_LANGUAGE=kok
+      - STT_MODEL_PATH=/app/models/indicconformer_stt_kok_hybrid_rnnt_large.nemo
+    volumes:
+      - ./models:/app/models:ro
+      - ./logs:/app/logs
+    expose:
+      - "50051"
+    networks:
+      - konkani-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  multilingual-stt:
+    build:
+      context: .
+      dockerfile: Dockerfile.stt
+    image: multilingual-stt-service:latest
+    container_name: multilingual-stt-service
+    profiles: ["legacy"]
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - CUDA_VISIBLE_DEVICES=0
+      - STT_HOST=0.0.0.0
+      - STT_PORT=50052
+      - STT_DEVICE=cuda
+      - STT_LANGUAGE=hi
+      - STT_MODEL_PATH=/app/models/indicconformer_stt_multi_hybrid_rnnt_600m.nemo
+    volumes:
+      - ./models:/app/models:ro
+      - ./logs:/app/logs
+    expose:
+      - "50052"
+    networks:
+      - konkani-network
+    restart: unless-stopped
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  pipeline:
+    build:
+      context: .
+      dockerfile: Dockerfile.pipeline
+    image: konkani-pipeline:latest
+    container_name: konkani-pipeline
+    profiles: ["legacy"]
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - CUDA_VISIBLE_DEVICES=0
+      - HF_TOKEN=${HF_TOKEN}
+      - STT_SERVICE_URL=http://stt-service:50051
+      - DISPLAY=${DISPLAY}
+      - PULSE_SERVER=unix:/tmp/pulseaudio.socket
+      - PULSE_COOKIE=/tmp/pulseaudio.cookie
+      - OLLAMA_URL=http://ollama:11434
+    volumes:
+      - .:/app:ro
+      - ./logs:/app/logs
+      - /tmp/pulseaudio.socket:/tmp/pulseaudio.socket
+      - /tmp/pulseaudio.cookie:/tmp/pulseaudio.cookie
+      - ~/.cache/huggingface:/root/.cache/huggingface
+    networks:
+      - konkani-network
+    depends_on:
+      stt-service:
+        condition: service_started
+      ollama:
+        condition: service_started
+    stdin_open: true
+    tty: true
+    privileged: true
+    devices:
+      - /dev/snd:/dev/snd
+    expose:
+      - "8765"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  pipeline-multi:
+    build:
+      context: .
+      dockerfile: Dockerfile.pipeline
+    image: konkani-pipeline-multi:latest
+    container_name: konkani-pipeline-multi
+    profiles: ["legacy"]
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - CUDA_VISIBLE_DEVICES=0
+      - HF_TOKEN=${HF_TOKEN}
+      - MULTILINGUAL_STT_URL=http://multilingual-stt:50052
+      - WS_PORT=8766
       - OLLAMA_URL=http://ollama:11434
     volumes:
       - .:/app:ro
@@ -215,54 +250,32 @@ services:
       - konkani-network
     depends_on:
       multilingual-stt:
-        condition: service_healthy
+        condition: service_started
       ollama:
         condition: service_started
     stdin_open: true
     tty: true
-    ports:
-      - "8768:8768"
-    command: [ "bash", "/app/start_pipeline_hindi.sh" ]
+    expose:
+      - "8766"
+    command: ["python", "/app/ws_pipeline_multi.py"]
     deploy:
       resources:
         reservations:
           devices:
             - driver: nvidia
               count: all
-              capabilities: [ gpu ]
+              capabilities: [gpu]
 
-  # Web UI - Serves static frontend files
   web-ui:
     image: python:3.10-slim
     container_name: konkani-web-ui
+    profiles: ["legacy"]
     working_dir: /app
     volumes:
       - ./web_ui:/app
-    ports:
-      - "7777:8080"
-    command: [ "python3", "-m", "http.server", "8080" ]
-    networks:
-      - konkani-network
-    restart: unless-stopped
-
-  # Local LLM Service - Ollama
-  ollama:
-    image: ollama/ollama:latest
-    container_name: konkani-ollama
-    ports:
-      - "11435:11434"
-    environment:
-      - OLLAMA_KEEP_ALIVE=24h
-      - OLLAMA_NUM_CTX=8192
-    volumes:
-      - ./ollama_data:/root/.ollama
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              device_ids: [ '1' ]
-              capabilities: [ gpu ]
+    command: ["python3", "-m", "http.server", "8080"]
+    expose:
+      - "8080"
     networks:
       - konkani-network
     restart: unless-stopped

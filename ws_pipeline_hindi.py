@@ -43,12 +43,12 @@ logger.add(
 WS_HOST = "0.0.0.0"
 WS_PORT = int(os.getenv("WS_PORT", "8768"))
 
-# STT Configuration (local Faster-Whisper)
-WHISPER_MODEL = "medium"        # medium model for good accuracy/performance balance
-WHISPER_DEVICE = "cuda"         # Will use cuda:1 (GPU 1) explicitly
-WHISPER_COMPUTE_TYPE = "float16" # GPU optimization
-WHISPER_GPU_INDEX = 1           # Physical GPU 1 for STT
-TTS_GPU_INDEX = 0               # Physical GPU 0 for TTS
+# STT/TTS configuration (env-overridable)
+WHISPER_MODEL = os.getenv("WHISPER_MODEL", "medium")
+WHISPER_DEVICE = os.getenv("WHISPER_DEVICE", "cuda")
+WHISPER_COMPUTE_TYPE = os.getenv("WHISPER_COMPUTE_TYPE", "float16")
+WHISPER_GPU_INDEX = int(os.getenv("WHISPER_GPU_INDEX", "1"))
+TTS_GPU_INDEX = int(os.getenv("TTS_GPU_INDEX", "0"))
 
 
 AUDIO_IN_RATE = 16000       # from browser mic
